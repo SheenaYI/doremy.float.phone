@@ -12,7 +12,7 @@
 import { useState, useSyncExternalStore } from "react";
 import { Disc3, Headphones } from "lucide-react";
 import type { ChatMessage } from "@/lib/chat-storage";
-import { getListeningRoom, subscribeListeningRoom, respondToListeningInvitation } from "@/lib/listen-together";
+import { getListeningRoom, subscribeListeningRoom, respondToListeningInvitation, exitListeningRoom } from "@/lib/listen-together";
 
 const serverSnapshot = () => null;
 
@@ -36,6 +36,10 @@ export function ListeningInviteCard({ msg }: { msg: ChatMessage }) {
     const cover = invite?.coverUrl && failedCover !== invite.coverUrl ? invite.coverUrl : undefined;
     // 只有「角色发出、且仍在等待」的邀请才可操作；用户自己发的要等角色回应。
     const actionable = status === "invited" && invite?.initiator === "character";
+    // 退出入口：只要本会话还有一个活跃房间就可用。
+    // 用户自己发出的邀请尚待回应时，这个按钮的语义是「撤回邀请」而不是「结束一起听」。
+    const canExit = Boolean(room && room.sessionId === msg.sessionId);
+    const exitLabel = status === "invited" && invite?.initiator !== "character" ? "撤回邀请" : "结束一起听";
 
     const respond = async (accept: boolean) => {
         if (!actionable || busy || !invite) return;
@@ -102,6 +106,27 @@ export function ListeningInviteCard({ msg }: { msg: ChatMessage }) {
                         婉拒
                     </button>
                 </div>
+            )}
+
+            {canExit && (
+                <button
+                    type="button"
+                    className="ui-btn rounded-[16px] w-full"
+                    disabled={busy}
+                    onClick={() => {
+                        setBusy(true);
+                        setError("");
+                        try {
+                            exitListeningRoom(msg.sessionId);
+                        } catch (failure) {
+                            setError(failure instanceof Error ? failure.message : "操作失败，请重试");
+                        } finally {
+                            setBusy(false);
+                        }
+                    }}
+                >
+                    {exitLabel}
+                </button>
             )}
 
             {error && <div className="ts-12" style={{ color: "var(--c-danger, #f87171)" }} role="status">{error}</div>}

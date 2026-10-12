@@ -62,6 +62,34 @@ export function leaveListeningRoom(sessionId: string) {
 }
 
 /**
+ * 用户主动退出/取消一起听，并留下一条对方可见的说明。
+ *
+ * 与 leaveListeningRoom 的区别：那个是静默清理（失败回滚、切换会话时用），
+ * 这个是用户明确表达的意图，必须留下痕迹：
+ *   - 已经在一起听 → 告知对方"用户结束了一起听"，让对方知道状态已变；
+ *   - 自己发出的邀请尚待回应 → 撤回邀请，同样留说明，避免对方之后莫名接受一份
+ *     已经不存在的邀请。
+ * 两种情况都返回 true 表示确实做了动作（调用方据此决定是否请角色回应）。
+ */
+export function exitListeningRoom(sessionId: string): boolean {
+    assertIdentityActive();
+    const current = getListeningRoom();
+    if (!current || current.sessionId !== sessionId) return false;
+
+    // 尚未被回应的用户邀请：只是撤回，不构成"结束了一起听"。
+    const isPendingOwnInvite = current.status === "invited" && current.initiator !== "character";
+    room = null;
+    pushChatMessage({
+        sessionId,
+        role: "system",
+        content: isPendingOwnInvite ? "用户撤回了一起听邀请。" : "用户结束了一起听。",
+    });
+    emit();
+    window.dispatchEvent(new CustomEvent("chat-messages-updated", { detail: { sessionId } }));
+    return true;
+}
+
+/**
  * 生成注入给模型的「一起听」状态说明。
  *
  * 分三种情况给不同指令，因为模型在这三种处境下该做的事完全不同：
