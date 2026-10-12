@@ -79,7 +79,8 @@ const SETTINGS_MENU = [
     { id: "imageGeneration", icon: Image, label: "图像生成 API", desc: "模型、参考图与提示词", iconColor: CONTENT_APP_ACCENTS.moments , glass: "image-generation" },
     // 与上面三项同属「接口」类配置，刻意排在一起：它们共用一个 CardGrid 渲染成
     // 一组并列小卡片，用量统计原本散在别处会让人找不到「我花了多少」的入口。
-    // 绿色柱状图图标：与前三个蓝色/紫色图标区分开，一眼能认出这是「看数据」的入口。
+    // 用玻璃图标与前三张保持一致；usage 资产是从 status-bar 结构改绿派生（见该 svg
+    // 文件头部说明），因为 Nucleo 原套装里没有图表类玻璃图标。
     { id: "usage", icon: ChartColumn, label: "用量统计", desc: "Token 消耗与次数", iconColor: BINDING_ACCENTS.embedding, glass: "usage" },
     { id: "presets", icon: Fingerprint, label: "预设", desc: "角色预设", iconColor: BINDING_ACCENTS.preset , glass: "presets" },
     { id: "worldbook", icon: Globe, label: "世界书", desc: "世界观设定", iconColor: BINDING_ACCENTS.worldBook , glass: "worldbook" },
