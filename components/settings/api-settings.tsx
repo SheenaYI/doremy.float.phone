@@ -10,6 +10,8 @@ import { ConfirmDialog } from "@/components/ui/modal";
 import { Toggle, Input } from "@/components/ui/form";
 import { Alert } from "@/components/ui/feedback";
 import { determineBaseUrl, simpleLLMCall } from "@/lib/api-helpers";
+import { summarizeByRoute } from "@/lib/usage-ledger";
+import { hydrateKvDb } from "@/lib/kv-db";
 
 const DEFAULT_CONFIGS: ApiConfig[] = [
     {
@@ -45,6 +47,25 @@ export function ApiSettings() {
     const [isTesting, setIsTesting] = useState<Record<string, boolean>>({});
     const [testResult, setTestResult] = useState<Record<string, { success: boolean; message: string }>>({});
 
+    // 账本里实际调用过的模型（routeId → 模型名集合）。
+    // 用它把「需要定价的模型」直接摆出来，用户不必手打模型名——定价入口最容易死在
+    // 「用户不知道该填哪个模型名」上，而账本已经知道答案。
+    const [usedModels, setUsedModels] = useState<Record<string, string[]>>({});
+
+    useEffect(() => {
+        let cancelled = false;
+        void (async () => {
+            await hydrateKvDb().catch(() => { /* 水合失败就按当前缓存读 */ });
+            if (cancelled) return;
+            const map: Record<string, string[]> = {};
+            for (const route of summarizeByRoute()) {
+                map[route.routeId] = Object.keys(route.models);
+            }
+            setUsedModels(map);
+        })();
+        return () => { cancelled = true; };
+    }, []);
+
     // Load from localStorage on mount
     useEffect(() => {
         const loaded = loadApiConfigs();
@@ -79,6 +100,32 @@ export function ApiSettings() {
         setEditingId(newConfig.id);
     }, [configs, persist]);
 
+    /**
+     * 写入某个模型的单价（元 / 百万 token）。
+     * 空字符串表示「不配这一项」，要真正删除键而不是留一个 undefined —— 否则
+     * 价格表里会残留一堆空键，让 resolveUsagePrice 的前缀匹配行为变得难以预测。
+     */
+    const updateModelPrice = useCallback((id: string, model: string, field: "input" | "output", raw: string) => {
+        const config = configs.find(c => c.id === id);
+        if (!config) return;
+        const table = { ...(config.modelPrices ?? {}) };
+        const entry = { ...(table[model] ?? {}) };
+        if (raw.trim() === "") {
+            delete entry[field];
+        } else {
+            const n = Number(raw);
+            // 非法输入不写入，避免把 NaN 存进配置后让整个花费统计变成 NaN
+            if (!Number.isFinite(n) || n < 0) return;
+            entry[field] = n;
+        }
+        if (entry.input === undefined && entry.output === undefined) {
+            delete table[model];
+        } else {
+            table[model] = entry;
+        }
+        persist(configs.map(c => c.id === id ? { ...c, modelPrices: table } : c));
+    }, [configs, persist]);
+
     useEffect(() => {
         setSubpageRightAction("api",
             <button
@@ -96,8 +143,7 @@ export function ApiSettings() {
         persist(configs.map(c => c.id === id ? { ...c, ...updates } : c));
     };
 
-    const removeConfig = (id: string) => {
-        persist(configs.filter(c => c.id !== id));
+    const removeConfig = (id: string) => {        persist(configs.filter(c => c.id !== id));
         removeApiConfigReferences(id);
         const newFetchedModels = { ...fetchedModels };
         delete newFetchedModels[id];
@@ -385,6 +431,60 @@ export function ApiSettings() {
                                                 )}
                                             </div>
                                         </div>
+
+                                        {/* 模型单价：只用于「用量统计」里的花费估算，不影响调用本身。
+                                            刻意不做成内置价格表——各家定价会变，内置一张表迟早是错的。
+                                            这里只列出账本里实际用过的模型 + 当前默认模型，用户按自己
+                                            实际付费的价格填；不填的模型在统计里显示「未计价」。 */}
+                                        {(() => {
+                                            const models = Array.from(new Set([
+                                                ...(usedModels[config.id] ?? []),
+                                                ...(config.defaultModel ? [config.defaultModel] : []),
+                                            ])).sort();
+                                            if (models.length === 0) return null;
+                                            return (
+                                                <div className="flex flex-col gap-2">
+                                                    <label className="menu-desc ml-1">
+                                                        模型单价（元 / 百万 token，可选）
+                                                        <span style={{ color: "#888", marginLeft: 6, fontSize: "0.85em" }}>
+                                                            仅用于用量统计的花费估算
+                                                        </span>
+                                                    </label>
+                                                    {models.map(model => {
+                                                        const price = config.modelPrices?.[model];
+                                                        return (
+                                                            <div key={model} className="flex items-center gap-2">
+                                                                <span
+                                                                    className="ts-12 flex-1 truncate"
+                                                                    style={{ color: "var(--c-text)" }}
+                                                                    title={model}
+                                                                >
+                                                                    {model}
+                                                                </span>
+                                                                <Input
+                                                                    type="number"
+                                                                    min="0"
+                                                                    step="0.01"
+                                                                    className="w-[76px]"
+                                                                    value={price?.input ?? ""}
+                                                                    onChange={(e) => updateModelPrice(config.id, model, "input", e.target.value)}
+                                                                    placeholder="输入"
+                                                                />
+                                                                <Input
+                                                                    type="number"
+                                                                    min="0"
+                                                                    step="0.01"
+                                                                    className="w-[76px]"
+                                                                    value={price?.output ?? ""}
+                                                                    onChange={(e) => updateModelPrice(config.id, model, "output", e.target.value)}
+                                                                    placeholder="输出"
+                                                                />
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            );
+                                        })()}
 
                                         <div className="flex gap-3 mt-1">
                                             <button

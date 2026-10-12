@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ProxyAgent, fetch as undiciFetch, type Dispatcher } from "undici";
+import { blockedOutboundUrlReason } from "@/lib/server/outbound-url-guard";
 
 export const maxDuration = 120;
 
@@ -19,41 +20,9 @@ type ProxyErrorPayload = {
 
 // 服务端 SSRF 防线：客户端 network.fetch 有同款校验，但绕过客户端直接 POST
 // 本路由时必须在这里再拦一次，禁止代理探测本机/内网/云元数据地址。
-function isPrivateIpv4(host: string): boolean {
-    const parts = host.split(".").map(part => Number(part));
-    if (parts.length !== 4 || parts.some(part => !Number.isInteger(part) || part < 0 || part > 255)) return false;
-    const [a, b] = parts;
-    return a === 0
-        || a === 10
-        || a === 127
-        || (a === 169 && b === 254)
-        || (a === 172 && b >= 16 && b <= 31)
-        || (a === 192 && b === 168)
-        || (a === 100 && b >= 64 && b <= 127);
-}
-
-function blockedProxyUrlReason(rawUrl: string): string | null {
-    let url: URL;
-    try {
-        url = new URL(rawUrl);
-    } catch {
-        return "URL 格式不合法";
-    }
-    if (url.protocol !== "https:" && url.protocol !== "http:") {
-        return "只允许 http/https URL";
-    }
-    const host = url.hostname.toLowerCase().replace(/^\[|\]$/g, "");
-    const isIpv6Literal = host.includes(":");
-    const blocked = host === "localhost"
-        || host.endsWith(".localhost")
-        || host.endsWith(".local")
-        || host.endsWith(".internal")
-        || host === "::1"
-        || host === "0:0:0:0:0:0:0:1"
-        || (isIpv6Literal && (host.startsWith("fc") || host.startsWith("fd") || host.startsWith("fe80") || host.startsWith("::ffff:")))
-        || isPrivateIpv4(host);
-    return blocked ? "不允许代理访问本机或内网地址" : null;
-}
+// 实现已提取到 lib/server/outbound-url-guard.ts —— llm-balance 路由共用同一道校验，
+// 这里保留原函数名以免改动本文件内的调用点。
+const blockedProxyUrlReason = blockedOutboundUrlReason;
 
 /**
  * Server-side proxy for external tool/MCP requests.

@@ -11,6 +11,7 @@ import {
 import { sendLLMToolStreamRequest, type LLMToolRequestResult } from "./chat-engine";
 import { fetchLlmPayload } from "./llm-http";
 import { pushApiLog } from "./api-log-store";
+import { recordUsageForCall } from "./api-helpers";
 import type { LLMContentPart } from "./llm-prompt-assembler";
 import { loadApiConfigs, loadBindingConfig } from "./settings-storage";
 import type { ApiConfig } from "./settings-types";
@@ -333,7 +334,7 @@ async function requestQaCompletion(
     // 写超被服务端安全截断（agent 循环里会自动续接），而不是拖垮整轮
     const maxTokens = getQaMaxOutputTokens() ?? undefined;
     // 工坊调用记录：与角色聊天/记忆等底层日志隔离，只进工坊右上角「调用记录」
-    const logQaCall = (entry: { model: string; messages: { role: string; content: string | LLMContentPart[]; marker?: string }[]; rawResponse: string; reasoning?: string }) => {
+    const logQaCall = (entry: { model: string; messages: { role: string; content: string | LLMContentPart[]; marker?: string }[]; rawResponse: string; reasoning?: string; usage?: unknown }) => {
         pushApiLog({
             characterName: "工坊",
             source: "qa",
@@ -345,7 +346,9 @@ async function requestQaCompletion(
             })),
             rawResponse: entry.rawResponse,
             reasoning: entry.reasoning?.trim() || undefined,
+            usage: entry.usage as { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number } | undefined,
         });
+        recordUsageForCall(apiConfig, entry.usage, { source: "qa", model: entry.model });
     };
     try {
         const streamRequest = buildProviderRequest(apiConfig, null, messages, { stream: true, maxTokens });
@@ -364,7 +367,7 @@ async function requestQaCompletion(
         if (!content) throw new Error("LLM 返回了空内容");
         const visible = stripThinkBlocks(content);
         if (visible) await options?.callbacks?.onDelta?.(visible);
-        logQaCall({ model: apiConfig.defaultModel, messages: request.messagesForLog, rawResponse: content, reasoning: parsed.reasoning });
+        logQaCall({ model: apiConfig.defaultModel, messages: request.messagesForLog, rawResponse: content, reasoning: parsed.reasoning, usage: parsed.usage });
         return { content, reasoning: parsed.reasoning || "" };
     }
 }
@@ -756,6 +759,7 @@ async function callQaAgentNative(apiConfig: ApiConfig, history: QaEngineMessage[
                 reasoning: parsed.reasoning?.trim() || undefined,
                 usage: parsed.usage,
             });
+            recordUsageForCall(apiConfig, parsed.usage, { source: "qa" });
         }
         await filter.flush();
 

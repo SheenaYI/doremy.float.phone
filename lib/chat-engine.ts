@@ -57,7 +57,7 @@ import {
     type LlmToolDefinition,
 } from "./llm-provider-adapter";
 import { setDebugPromptSnapshot, type DebugPromptSnapshot } from "./debug-store";
-import { extractFinishReason } from "./api-helpers";
+import { extractFinishReason, recordUsageForCall } from "./api-helpers";
 import { fetchLlmPayload } from "./llm-http";
 import { loadMemoryConfig, incrementEventCounter } from "./memory-storage";
 import { retrieveCoreMemoriesForPrompt, retrieveMemoriesForPrompt } from "./memory-service";
@@ -1012,6 +1012,7 @@ export async function sendLLMRequest(
             // 思维链只经 onReasoning 回调透传，之前没进日志；这里单独存一份原文
             reasoning: parsed.reasoning || undefined,
         });
+        recordUsageForCall(config, parsed.usage, { source: "chat" });
 
         if (options?.skipOutputRegex) {
             return rawOutput;
@@ -1333,6 +1334,7 @@ export async function sendLLMToolRequest(
             rawResponse,
             usage: parsed.usage,
         });
+        recordUsageForCall(config, parsed.usage, { source: "chat" });
 
         if (!options?.skipOutputRegex && rawOutput) {
             const macroEngine = new MacroEngine(meta?.characterName ?? "", meta?.userName ?? "用户");

@@ -4,8 +4,38 @@
 
 import type { ApiConfig } from "./settings-types";
 import { pushApiLog } from "./api-log-store";
+import { recordUsage, resolveUsagePrice, type UsageSource } from "./usage-ledger";
 
 const SIMPLE_ANTHROPIC_AUTO_MAX_TOKENS = 8192;
+
+/**
+ * 把一次调用的用量记进账本（用量统计面板的唯一数据来源之一）。
+ *
+ * 之所以集中成一个函数而不是在每个调用点各写一遍：
+ *   1. 单价解析口径必须一致 —— 各调用点各自去 config.modelPrices 里查，迟早出现
+ *      「聊天算钱、后台不算钱」这类不一致；
+ *   2. 传参时最容易漏的就是 price，集中处理让漏配价表现为「未计价」而不是「花费 0」。
+ *
+ * 刻意不抛异常：usage-ledger 内部已兜底，这里再包一层是因为调用点都在主流程里，
+ * 统计绝不该让一次成功的模型调用变成失败。
+ */
+export function recordUsageForCall(
+    config: Pick<ApiConfig, "id" | "name" | "provider" | "defaultModel" | "modelPrices"> | undefined,
+    usage: unknown,
+    options?: { source?: UsageSource; model?: string },
+): void {
+    if (!usage) return;
+    try {
+        const model = options?.model || config?.defaultModel;
+        recordUsage({
+            usage: usage as { prompt_tokens?: unknown; completion_tokens?: unknown; total_tokens?: unknown },
+            config,
+            model,
+            source: options?.source ?? "background",
+            price: resolveUsagePrice(model, config?.modelPrices),
+        });
+    } catch { /* 统计失败不影响调用 */ }
+}
 
 /**
  * Resolve the base URL for an API config.
@@ -189,6 +219,9 @@ export async function simpleLLMCall(
             rawResponse: content ?? describeEmptyLLMResponse(data, finishReason, wasTruncated, config),
             usage: extractUsage(data),
         });
+        // 后台功能（记忆总结、NPC 生成等 18 处）的用量同样入账：这些调用量大且静默，
+        // 恰恰是用户最想知道「token 花到哪去了」的部分。
+        recordUsageForCall(config, extractUsage(data), { source: "background" });
         if (!content) {
             console.warn("[simpleLLMCall] Empty response. Keys:", JSON.stringify(Object.keys(data || {})),
                 "Full:", JSON.stringify(data).slice(0, 500));

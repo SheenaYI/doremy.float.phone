@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useLayoutEffect, useCallback, useRef, createContext, type CSSProperties, type ReactNode } from "react";
-import { Activity, CalendarDays, Camera, Check, ChevronRight, Clock, Database, FileText, Fingerprint, Globe, HardDrive, Image, Info, KeyRound, Laptop, Layers, LayoutTemplate, Link2, Loader2, LogOut, MessageSquare, Mic, PhoneCall, SlidersHorizontal, UserCircle, Wrench, X, CloudUpload, Zap } from "lucide-react";
+import { Activity, CalendarDays, Camera, ChartColumn, Check, ChevronRight, Clock, Database, FileText, Fingerprint, Globe, HardDrive, Image, Info, KeyRound, Laptop, Layers, LayoutTemplate, Link2, Loader2, LogOut, MessageSquare, Mic, PhoneCall, SlidersHorizontal, UserCircle, Wrench, X, CloudUpload, Zap } from "lucide-react";
 import { ConfirmDialog } from "./ui/modal";
 import { useAccount } from "@/lib/account-context";
 import { isSelfHostedModeEnabled } from "@/lib/self-hosting";
@@ -9,6 +9,7 @@ import { changeAccountPassword } from "@/lib/account-client";
 import { ApiSettings } from "./settings/api-settings";
 import { VoiceSettings } from "./settings/voice-settings";
 import { ImageGenerationSettings } from "./settings/image-generation-settings";
+import { UsageStatistics } from "./settings/usage-statistics";
 import { PresetManager } from "./settings/preset-manager";
 import { WorldBookManager } from "./settings/worldbook-manager";
 import { RegexManager } from "./settings/regex-manager";
@@ -52,6 +53,7 @@ type SubPage =
     | "api"
     | "voice"
     | "imageGeneration"
+    | "usage"
     | "presets"
     | "worldbook"
     | "regex"
@@ -75,6 +77,9 @@ const SETTINGS_MENU = [
     { id: "api", icon: HardDrive, label: "API 设置", desc: "大模型接口", iconColor: BINDING_ACCENTS.api , glass: "api" },
     { id: "voice", icon: Mic, label: "语音 API", desc: "语音合成", iconColor: BINDING_ACCENTS.voice , glass: "voice" },
     { id: "imageGeneration", icon: Image, label: "图像生成 API", desc: "模型、参考图与提示词", iconColor: CONTENT_APP_ACCENTS.moments , glass: "image-generation" },
+    // 与上面三项同属「接口」类配置，刻意排在一起：它们共用一个 CardGrid 渲染成
+    // 一组并列小卡片，用量统计原本散在别处会让人找不到「我花了多少」的入口。
+    { id: "usage", icon: ChartColumn, label: "用量统计", desc: "Token 消耗与余额", iconColor: BINDING_ACCENTS.api , glass: "usage" },
     { id: "presets", icon: Fingerprint, label: "预设", desc: "角色预设", iconColor: BINDING_ACCENTS.preset , glass: "presets" },
     { id: "worldbook", icon: Globe, label: "世界书", desc: "世界观设定", iconColor: BINDING_ACCENTS.worldBook , glass: "worldbook" },
     { id: "regex", icon: Database, label: "正则规则", desc: "文本替换", iconColor: BINDING_ACCENTS.regex , glass: "regex" },
@@ -271,17 +276,6 @@ export function PhoneSettingsApp({ onClose, onNotice }: SettingsPageProps) {
         onNotice(next ? "已开启后台保活" : "已关闭后台保活");
     }, [onNotice]);
 
-    const imageGenerationItem = SETTINGS_MENU.find(i => i.id === "imageGeneration")!;
-    const imageGenerationFeaturedItem: FeaturedCardItem = {
-        id: imageGenerationItem.id,
-        icon: imageGenerationItem.icon,
-        label: imageGenerationItem.label,
-        desc: imageGenerationItem.desc,
-        iconColor: imageGenerationItem.iconColor,
-        glassIcon: imageGenerationItem.glass,
-        onClick: () => setCurrentPage("imageGeneration"),
-    };
-
     const cloudItem = SETTINGS_MENU.find(i => i.id === "cloud")!;
     const cloudFeaturedItem: FeaturedCardItem = {
         id: cloudItem.id,
@@ -322,6 +316,8 @@ export function PhoneSettingsApp({ onClose, onNotice }: SettingsPageProps) {
                 return <VoiceSettings />;
             case "imageGeneration":
                 return <ImageGenerationSettings />;
+            case "usage":
+                return <UsageStatistics />;
             case "presets":
                 return <PresetManager isActive />;
             case "worldbook":
@@ -495,7 +491,7 @@ export function PhoneSettingsApp({ onClose, onNotice }: SettingsPageProps) {
                         <CardGrid
                             label="API Config"
                             labelClassName="settings-menu-section-title"
-                            items={SETTINGS_MENU.filter(item => ["api", "voice"].includes(item.id)).map(makeCardItem)}
+                            items={SETTINGS_MENU.filter(item => ["api", "voice", "imageGeneration", "usage"].includes(item.id)).map(makeCardItem)}
                         />
                         <div className="settings-data-rules-section">
                             <h3 className="settings-menu-section-title">Data & Rules</h3>
@@ -504,12 +500,6 @@ export function PhoneSettingsApp({ onClose, onNotice }: SettingsPageProps) {
                                     items={SETTINGS_MENU.filter(item => ["presets", "worldbook", "regex", "data"].includes(item.id)).map(makeCardItem)}
                                 />
                                 <FeaturedCard item={bindingFeaturedItem} />
-                            </div>
-                        </div>
-                        <div className="settings-image-generation-section">
-                            <h3 className="settings-menu-section-title">Image Generation</h3>
-                            <div className="mt-[10px]">
-                                <FeaturedCard item={imageGenerationFeaturedItem} />
                             </div>
                         </div>
                         <div>

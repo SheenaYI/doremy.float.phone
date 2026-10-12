@@ -153,6 +153,13 @@ export type ApiConfig = {
     enableImageRecognition: boolean;
     enableImageGeneration: boolean;
     preventEmptyGenerateRambling?: boolean;
+    /**
+     * 各模型的单价配置（元 / 百万 token），供用量统计估算花费。
+     * 刻意不做成全局价格表：各家模型定价会变，内置一张表迟早过期且是错的，
+     * 所以由用户按自己实际付费的价格填；没填的模型在统计里显示为「未计价」，
+     * 与「花费为 0」区分开。normalizeApiConfig 走的是 {...rest}，新增字段天然向后兼容。
+     */
+    modelPrices?: Record<string, { input?: number; output?: number }>;
 };
 
 // --- VoiceApiConfig (migrated from voice-settings.tsx) ---
