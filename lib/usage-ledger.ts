@@ -12,6 +12,7 @@
 // 否则该数据会从备份与角色本地数据工具里静默消失。
 
 import { kvGet, kvSet, kvRemove, registerKvMigration } from "./kv-db";
+import type { BillingMode, ModelPriceConfig } from "./settings-types";
 
 export const USAGE_LEDGER_KEY = "ai_phone_usage_ledger_v1";
 
@@ -36,17 +37,49 @@ export type UsageTokens = {
 export type UsageSource = "chat" | "background" | "qa";
 
 /**
+ * 两种计费方式的成本，刻意分开存放。
+ *
+ * 按次计费的中转站上 token 数不参与计价，所以「按 token 的钱」和「按次的钱」是两套
+ * 不同口径的量。把它们加成一个 total 会得到一个没有意义的数字，因此这里始终分开，
+ * 由展示层决定怎么呈现（混用时并列显示，而不是求和）。
+ */
+export type CostByMode = {
+    /** 按 token 计费的成本合计（元） */
+    perToken?: number;
+    /** 按次计费的成本合计（元） */
+    perCall?: number;
+};
+
+/** 把两组成本相加，任一为空时保留另一组。 */
+export function addCost(a: CostByMode | undefined, b: CostByMode | undefined): CostByMode | undefined {
+    if (!a) return b;
+    if (!b) return a;
+    const out: CostByMode = {};
+    const perToken = (a.perToken ?? 0) + (b.perToken ?? 0);
+    const perCall = (a.perCall ?? 0) + (b.perCall ?? 0);
+    if (a.perToken !== undefined || b.perToken !== undefined) out.perToken = perToken;
+    if (a.perCall !== undefined || b.perCall !== undefined) out.perCall = perCall;
+    return out;
+}
+
+/**
  * 单个模型在一天内的用量。
- * 成本只在「用户为该模型配了单价」时才有值；没配价的模型成本保持 undefined，
+ * 成本只在「用户为该模型配了计费配置」时才有值；没配价的模型成本保持 undefined，
  * 这样「未计价」与「花费为 0」不会混为一谈。
  */
 export type ModelUsage = UsageTokens & {
-    /** 输入单价（元 / 百万 token），来自用户配置 */
+    /** 计费方式（缺省按 token） */
+    billingMode?: BillingMode;
+    /** 输入单价（元 / 百万 token） */
     inputPricePerM?: number;
-    /** 输出单价（元 / 百万 token），来自用户配置 */
+    /** 输出单价（元 / 百万 token） */
     outputPricePerM?: number;
-    /** 估算花费（元）。仅在配了单价时存在 */
-    cost?: number;
+    /** 单次价格（元 / 次） */
+    pricePerCall?: number;
+    /** 估算花费（元），按计费方式分别累计 */
+    cost?: CostByMode;
+    /** 因为该模型没配价而未能计入花费的调用次数 */
+    unpricedCalls?: number;
 };
 
 /** 一条路由（= 一条 ApiConfig）在一天内的用量，按模型细分。 */
@@ -55,8 +88,12 @@ export type RouteUsage = UsageTokens & {
     label: string;
     /** ApiConfig.provider，用于按厂商汇总 */
     provider: string;
-    /** 当天该路由的估算花费合计（元）；只有全部模型都配价时才有意义 */
-    cost?: number;
+    /** 该路由的 baseUrl（缺省时用 provider 官方端点），用于按入口分类 */
+    baseUrl?: string;
+    /** 当天该路由的估算花费合计（元），按计费方式分开 */
+    cost?: CostByMode;
+    /** 未计价调用次数 */
+    unpricedCalls?: number;
     /** 按模型名细分 */
     models: Record<string, ModelUsage>;
     /** 按调用来源细分 */
@@ -68,8 +105,10 @@ export type DayUsage = {
     /** YYYY-MM-DD（本地时区） */
     date: string;
     totals: UsageTokens;
-    /** 当天估算花费合计（元） */
-    cost?: number;
+    /** 当天估算花费合计（元），按计费方式分开 */
+    cost?: CostByMode;
+    /** 未计价调用次数 */
+    unpricedCalls?: number;
     /** 按路由 id 细分 */
     routes: Record<string, RouteUsage>;
 };
@@ -89,12 +128,12 @@ export type RecordUsageInput = {
     /** 调用结果里的 usage；缺失则本次不计入（例如请求失败） */
     usage?: UsageLike;
     /** 命中的 ApiConfig；缺失时归入「未标注路由」而不是丢弃 */
-    config?: { id?: string; name?: string; provider?: string; defaultModel?: string };
+    config?: { id?: string; name?: string; provider?: string; defaultModel?: string; baseUrl?: string };
     /** 实际使用的模型名，优先于 config.defaultModel */
     model?: string;
     source?: UsageSource;
-    /** 该模型单价（元 / 百万 token），由调用方从用户配置读出 */
-    price?: { input?: number; output?: number };
+    /** 该模型的计费配置，由调用方从用户配置读出 */
+    price?: ModelPriceConfig;
     /** 覆盖记录日期（测试用），缺省取当前时间 */
     date?: Date;
 };
@@ -174,12 +213,26 @@ function addTokens(target: UsageTokens, prompt: number, completion: number, tota
 }
 
 /** 由 token 数与单价算花费（元）。单价单位是「元 / 百万 token」。 */
-function computeCost(prompt: number, completion: number, price?: { input?: number; output?: number }): number | undefined {
-    if (!price || (price.input === undefined && price.output === undefined)) return undefined;
-    const inCost = price.input !== undefined ? (prompt / 1_000_000) * price.input : undefined;
-    const outCost = price.output !== undefined ? (completion / 1_000_000) * price.output : undefined;
-    if (inCost === undefined && outCost === undefined) return undefined;
-    return (inCost ?? 0) + (outCost ?? 0);
+/**
+ * 按计费配置算这一次调用的成本。
+ *
+ * 三种情况必须区分清楚，不能混为一谈：
+ *   - 按 token：算 input/output 的加权和；
+ *   - 按次：只算 perCall，token 数不参与（中转站按请求次数计费时，token 与价格无关）；
+ *   - 没配价：返回 undefined，由调用方计入 unpricedCalls，让「未计价」可见。
+ * mode 缺省视为 per_token，兼容只填了 input/output 的历史配置。
+ */
+function computeCost(prompt: number, completion: number, price?: ModelPriceConfig): CostByMode | undefined {
+    if (!price) return undefined;
+    const mode: BillingMode = price.mode ?? "per_token";
+    if (mode === "per_call") {
+        if (price.perCall === undefined) return undefined;
+        return { perCall: price.perCall };
+    }
+    if (price.input === undefined && price.output === undefined) return undefined;
+    const inCost = price.input !== undefined ? (prompt / 1_000_000) * price.input : 0;
+    const outCost = price.output !== undefined ? (completion / 1_000_000) * price.output : 0;
+    return { perToken: inCost + outCost };
 }
 
 function coerceCount(v: unknown): number {
@@ -217,19 +270,29 @@ export function recordUsage(input: RecordUsageInput): DayUsage | null {
         const route: RouteUsage = day.routes[routeId] ?? {
             label, provider, ...emptyTokens(), models: {}, bySource: {},
         };
-        // 路由显示名与厂商以最近一次为准（用户可能改名）
+        // 路由显示名、厂商与入口地址以最近一次为准（用户可能改名或换中转站）
         route.label = label;
         route.provider = provider;
+        if (input.config?.baseUrl) route.baseUrl = input.config.baseUrl;
 
         const modelUsage: ModelUsage = route.models[model] ?? { ...emptyTokens() };
-        if (input.price?.input !== undefined) modelUsage.inputPricePerM = input.price.input;
-        if (input.price?.output !== undefined) modelUsage.outputPricePerM = input.price.output;
+        if (input.price) {
+            modelUsage.billingMode = input.price.mode ?? "per_token";
+            if (input.price.input !== undefined) modelUsage.inputPricePerM = input.price.input;
+            if (input.price.output !== undefined) modelUsage.outputPricePerM = input.price.output;
+            if (input.price.perCall !== undefined) modelUsage.pricePerCall = input.price.perCall;
+        }
 
         addTokens(modelUsage, prompt, completion, total);
         if (cost !== undefined) {
-            modelUsage.cost = (modelUsage.cost ?? 0) + cost;
-            route.cost = (route.cost ?? 0) + cost;
-            day.cost = (day.cost ?? 0) + cost;
+            modelUsage.cost = addCost(modelUsage.cost, cost);
+            route.cost = addCost(route.cost, cost);
+            day.cost = addCost(day.cost, cost);
+        } else {
+            // 没配价的调用单独计数：否则用户看到的总花费会显得「完整」，实际漏了一部分。
+            modelUsage.unpricedCalls = (modelUsage.unpricedCalls ?? 0) + 1;
+            route.unpricedCalls = (route.unpricedCalls ?? 0) + 1;
+            day.unpricedCalls = (day.unpricedCalls ?? 0) + 1;
         }
         route.models[model] = modelUsage;
 
@@ -284,20 +347,25 @@ export function summarizeByRoute(from?: string, to?: string): RouteUsageSummary[
             };
             target.label = route.label;
             target.provider = route.provider;
+            if (route.baseUrl) target.baseUrl = route.baseUrl;
             target.prompt += route.prompt;
             target.completion += route.completion;
             target.total += route.total;
             target.calls += route.calls;
-            if (route.cost !== undefined) target.cost = (target.cost ?? 0) + route.cost;
+            target.cost = addCost(target.cost, route.cost);
+            if (route.unpricedCalls) target.unpricedCalls = (target.unpricedCalls ?? 0) + route.unpricedCalls;
             for (const [model, mu] of Object.entries(route.models)) {
                 const t = target.models[model] ?? { ...emptyTokens() };
                 t.prompt += mu.prompt;
                 t.completion += mu.completion;
                 t.total += mu.total;
                 t.calls += mu.calls;
-                if (mu.cost !== undefined) t.cost = (t.cost ?? 0) + mu.cost;
+                t.cost = addCost(t.cost, mu.cost);
+                if (mu.unpricedCalls) t.unpricedCalls = (t.unpricedCalls ?? 0) + mu.unpricedCalls;
+                if (mu.billingMode !== undefined) t.billingMode = mu.billingMode;
                 if (mu.inputPricePerM !== undefined) t.inputPricePerM = mu.inputPricePerM;
                 if (mu.outputPricePerM !== undefined) t.outputPricePerM = mu.outputPricePerM;
+                if (mu.pricePerCall !== undefined) t.pricePerCall = mu.pricePerCall;
                 target.models[model] = t;
             }
             for (const [src, n] of Object.entries(route.bySource)) {
@@ -313,8 +381,8 @@ export function summarizeByRoute(from?: string, to?: string): RouteUsageSummary[
 }
 
 /** 按厂商汇总（同一家多个 key 合并）。 */
-export function summarizeByProvider(from?: string, to?: string): Array<UsageTokens & { provider: string; cost?: number }> {
-    const acc = new Map<string, UsageTokens & { provider: string; cost?: number }>();
+export function summarizeByProvider(from?: string, to?: string): Array<UsageTokens & { provider: string; cost?: CostByMode; unpricedCalls?: number }> {
+    const acc = new Map<string, UsageTokens & { provider: string; cost?: CostByMode; unpricedCalls?: number }>();
     for (const route of summarizeByRoute(from, to)) {
         const key = route.provider || "未标注";
         const target = acc.get(key) ?? { provider: key, ...emptyTokens() };
@@ -322,7 +390,31 @@ export function summarizeByProvider(from?: string, to?: string): Array<UsageToke
         target.completion += route.completion;
         target.total += route.total;
         target.calls += route.calls;
-        if (route.cost !== undefined) target.cost = (target.cost ?? 0) + route.cost;
+        target.cost = addCost(target.cost, route.cost);
+        if (route.unpricedCalls) target.unpricedCalls = (target.unpricedCalls ?? 0) + route.unpricedCalls;
+        acc.set(key, target);
+    }
+    return Array.from(acc.values()).sort((a, b) => b.total - a.total);
+}
+
+/**
+ * 按「入口地址」(baseUrl) 汇总。
+ *
+ * 为什么需要它：同一个 provider 可能配了多条不同中转站（各自不同 baseUrl、不同计费），
+ * 按 provider 汇总会把它们混成一条，看不出「哪个入口在烧钱」。baseUrl 为空的路由
+ * 归到「官方默认端点」，用 provider 名标注，避免落进一个无名的桶里。
+ */
+export function summarizeByBaseUrl(from?: string, to?: string): Array<UsageTokens & { baseUrl: string; label: string; cost?: CostByMode; unpricedCalls?: number }> {
+    const acc = new Map<string, UsageTokens & { baseUrl: string; label: string; cost?: CostByMode; unpricedCalls?: number }>();
+    for (const route of summarizeByRoute(from, to)) {
+        const key = route.baseUrl || `官方默认端点（${route.provider || "未标注"}）`;
+        const target = acc.get(key) ?? { baseUrl: key, label: key, ...emptyTokens() };
+        target.prompt += route.prompt;
+        target.completion += route.completion;
+        target.total += route.total;
+        target.calls += route.calls;
+        target.cost = addCost(target.cost, route.cost);
+        if (route.unpricedCalls) target.unpricedCalls = (target.unpricedCalls ?? 0) + route.unpricedCalls;
         acc.set(key, target);
     }
     return Array.from(acc.values()).sort((a, b) => b.total - a.total);
@@ -344,12 +436,12 @@ export function hasUsageData(): boolean {
  */
 export function resolveUsagePrice(
     model: string | undefined,
-    table: Record<string, { input?: number; output?: number }> | undefined,
-): { input?: number; output?: number } | undefined {
+    table: Record<string, ModelPriceConfig> | undefined,
+): ModelPriceConfig | undefined {
     if (!model || !table) return undefined;
     if (table[model]) return table[model];
 
-    let best: { key: string; price: { input?: number; output?: number } } | undefined;
+    let best: { key: string; price: ModelPriceConfig } | undefined;
     for (const [key, price] of Object.entries(table)) {
         if (!key || !model.startsWith(key)) continue;
         const boundary = model.charAt(key.length);

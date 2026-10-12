@@ -1,49 +1,30 @@
 "use client";
 
 // components/settings/usage-statistics.tsx
-// 用量统计面板：token 消耗日历 + 年度热力图 + 各路由余额。
+// 用量统计面板：token 消耗日历 + 月历热力 + 各路由消耗。
 //
-// 数据来源分两条，刻意分开：
-//   1. 用量（token 数、调用次数、花费）来自 lib/usage-ledger.ts 的本地账本，
-//      按「天 × 路由 × 模型」持久聚合，纯本地、离线可看；
-//   2. 余额来自 /api/llm-balance 服务端代理（浏览器直连会被 CORS 拦，且不该把
-//      apiKey 撒到第三方网络层）。余额是「此刻的实时值」，不落到账本里 ——
-//      历史余额是另一件事，混进来会让「用量」与「余额」两个口径互相污染。
+// 数据全部来自 lib/usage-ledger.ts 的本地账本（按「天 × 路由 × 模型 × 来源」聚合），
+// 纯本地、离线可看。
+//
+// 刻意不提供余额查询：只剩 DeepSeek 官方与 OpenRouter 的余额接口接受普通 API Key，
+// one-api/new-api 系的 /api/user/self 需要另一种令牌（用 sk- key 必然 401/404），
+// 而私有中转站多数根本没有余额接口。为少数站点做一套猜测式探测，换来的是
+// 「多数请求打不通 + API Key 多经过一跳服务端」的风险，不划算。
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-    AlertCircle, Brain, CalendarDays, ChevronDown, ChevronRight, Coins, Flame,
-    RefreshCw, Wallet,
+    AlertCircle, Brain, CalendarDays, ChartColumn, ChevronDown, ChevronRight, Coins, RefreshCw,
 } from "lucide-react";
 import {
-    listUsageDays, getUsageLedger, summarizeByRoute, summarizeByProvider,
-    localDateKey, type DayUsage, type UsageTokens,
+    listUsageDays, summarizeByRoute, summarizeByProvider, summarizeByBaseUrl,
+    localDateKey, type DayUsage, type UsageTokens, type CostByMode,
 } from "@/lib/usage-ledger";
-import { loadApiConfigs } from "@/lib/settings-storage";
 import { hydrateKvDb } from "@/lib/kv-db";
-import type { ApiConfig } from "@/lib/settings-types";
-import { determineBaseUrl } from "@/lib/api-helpers";
 
-/** 热力图只画最近一年（GitHub 贡献图的惯例）。 */
-const HEATMAP_DAYS = 371;
 /** 日历可翻看多少个月。 */
 const CALENDAR_MONTHS_BACK = 24;
 
 const WEEKDAY_LABELS = ["日", "一", "二", "三", "四", "五", "六"];
-
-type BalanceEntry = {
-    total?: number;
-    granted?: number;
-    toppedUp?: number;
-    used?: number;
-    currency?: string;
-    unit?: string;
-};
-
-type BalanceState =
-    | { status: "loading" }
-    | { status: "ok"; entries: BalanceEntry[]; available?: boolean; note?: string; shape?: string }
-    | { status: "error"; error: string };
 
 function formatTokens(n: number): string {
     if (!Number.isFinite(n) || n <= 0) return "0";
@@ -52,14 +33,26 @@ function formatTokens(n: number): string {
     return String(Math.round(n));
 }
 
-function formatMoney(n: number | undefined, currency?: string): string {
-    if (n === undefined) return "—";
-    const unit = currency === "USD" ? "$" : currency === "CNY" ? "¥" : "";
-    const fixed = Math.abs(n) >= 100 ? n.toFixed(1) : n.toFixed(2);
-    return unit ? `${unit}${fixed}` : fixed;
+function formatMoney(n: number): string {
+    return `¥${Math.abs(n) >= 100 ? n.toFixed(1) : n.toFixed(2)}`;
 }
 
-/** 把总数映射到 0-4 级，交给 CSS 决定配色；用相对分位而不是绝对阈值，避免量级差异导致整图同色。 */
+/**
+ * 把成本按计费方式渲染成文本。
+ *
+ * 按 token 与按次的金额刻意分开列出、绝不相加：两者是不同口径的量，
+ * 求和会得出一个没有意义的数字。未计价的调用数单独提示，让用户知道
+ * 这个花费是不完整的，而不是误以为「就花了这么多」。
+ */
+function formatCost(cost: CostByMode | undefined, unpricedCalls?: number): string | null {
+    const parts: string[] = [];
+    if (cost?.perToken !== undefined) parts.push(`${formatMoney(cost.perToken)} (token)`);
+    if (cost?.perCall !== undefined) parts.push(`${formatMoney(cost.perCall)} (按次)`);
+    if (unpricedCalls) parts.push(`${unpricedCalls} 次未计价`);
+    return parts.length > 0 ? parts.join(" · ") : null;
+}
+
+/** 把用量映射到 0-4 级，交给 CSS 决定配色；用相对分位而非绝对阈值，避免量级差异导致整图同色。 */
 function tokenLevel(value: number, max: number): 0 | 1 | 2 | 3 | 4 {
     if (!value || value <= 0 || max <= 0) return 0;
     const ratio = value / max;
@@ -69,21 +62,14 @@ function tokenLevel(value: number, max: number): 0 | 1 | 2 | 3 | 4 {
     return 4;
 }
 
-/** 本地时区的 Date → YYYY-MM-DD，与账本的键保持一致（不能用 toISOString，那是 UTC）。 */
-function dateKey(d: Date): string {
-    return localDateKey(d);
+/** 热力格背景色：4 级绿色。0 级用面板边框色表示「无记录」。 */
+function heatBackground(level: 0 | 1 | 2 | 3 | 4): string {
+    if (level === 0) return "var(--c-panel-border)";
+    return `color-mix(in srgb, var(--c-icon-green, #18A957) ${level * 20 + 15}%, transparent)`;
 }
 
-function lastNDays(n: number): Date[] {
-    const out: Date[] = [];
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    for (let i = n - 1; i >= 0; i--) {
-        const d = new Date(today);
-        d.setDate(d.getDate() - i);
-        out.push(d);
-    }
-    return out;
+function dateKey(d: Date): string {
+    return localDateKey(d);
 }
 
 function shiftMonth(year: number, month: number, delta: number): { year: number; month: number } {
@@ -93,38 +79,27 @@ function shiftMonth(year: number, month: number, delta: number): { year: number;
 
 export function UsageStatistics() {
     const [days, setDays] = useState<DayUsage[]>([]);
-    const [configs, setConfigs] = useState<ApiConfig[]>([]);
-    const [balances, setBalances] = useState<Record<string, BalanceState>>({});
     const [expandedRoute, setExpandedRoute] = useState<string | null>(null);
     const [selectedDate, setSelectedDate] = useState<string | null>(null);
-    const today = new Date();
+    const today = useMemo(() => new Date(), []);
     const [cursor, setCursor] = useState({ year: today.getFullYear(), month: today.getMonth() });
     const [loaded, setLoaded] = useState(false);
 
     const reloadLedger = useCallback(() => {
         setDays(listUsageDays());
-        setConfigs(loadApiConfigs());
         setLoaded(true);
     }, []);
 
     useEffect(() => {
         let cancelled = false;
         // 必须先等 kv-db 水合完成再读账本：账本存在 IndexedDB 里，页面刷新后内存缓存是空的，
-        // 由 hydrateKvDb() 异步回填。若直接读，会把「还没加载完」误判成「没有数据」，
-        // 让用户以为统计丢了。binding-manager 同样是先 await 再渲染。
+        // 由 hydrateKvDb() 异步回填。若直接读，会把「还没加载完」误判成「没有数据」。
         void (async () => {
-            await hydrateKvDb().catch(() => { /* 水合失败也要继续，读到的就是当前缓存内容 */ });
+            await hydrateKvDb().catch(() => { /* 水合失败就按当前缓存读 */ });
             if (cancelled) return;
             reloadLedger();
         })();
-        // 账本在别的页面也会被写入（聊天时），切回本面板时重新读一次即可，
-        // 不订阅全局事件是为了避免为一个统计面板引入跨模块耦合。
-        const onFocus = () => reloadLedger();
-        window.addEventListener("focus", onFocus);
-        return () => {
-            cancelled = true;
-            window.removeEventListener("focus", onFocus);
-        };
+        return () => { cancelled = true; };
     }, [reloadLedger]);
 
     const byDate = useMemo(() => {
@@ -138,92 +113,65 @@ export function UsageStatistics() {
         [days],
     );
 
-    const totals = useMemo<UsageTokens & { cost?: number }>(() => {
-        const acc: UsageTokens & { cost?: number } = { prompt: 0, completion: 0, total: 0, calls: 0 };
+    const totals = useMemo<UsageTokens & { cost?: CostByMode; unpricedCalls?: number }>(() => {
+        const acc: UsageTokens & { cost?: CostByMode; unpricedCalls?: number } = { prompt: 0, completion: 0, total: 0, calls: 0 };
+        const perToken: number[] = [];
+        const perCall: number[] = [];
+        let unpriced = 0;
         for (const d of days) {
             acc.prompt += d.totals.prompt;
             acc.completion += d.totals.completion;
             acc.total += d.totals.total;
             acc.calls += d.totals.calls;
-            if (d.cost !== undefined) acc.cost = (acc.cost ?? 0) + d.cost;
+            if (d.cost?.perToken !== undefined) perToken.push(d.cost.perToken);
+            if (d.cost?.perCall !== undefined) perCall.push(d.cost.perCall);
+            unpriced += d.unpricedCalls ?? 0;
         }
+        const cost: CostByMode = {};
+        if (perToken.length > 0) cost.perToken = perToken.reduce((a, b) => a + b, 0);
+        if (perCall.length > 0) cost.perCall = perCall.reduce((a, b) => a + b, 0);
+        if (Object.keys(cost).length > 0) acc.cost = cost;
+        if (unpriced > 0) acc.unpricedCalls = unpriced;
         return acc;
     }, [days]);
 
     const routeSummaries = useMemo(() => summarizeByRoute(), [days]);
     const providerSummaries = useMemo(() => summarizeByProvider(), [days]);
-
-    const heatmapGrid = useMemo(() => {
-        const grid = lastNDays(HEATMAP_DAYS);
-        // 按周对齐：整体偏移到周日开头，列 = 周
-        const firstWeekday = grid[0].getDay();
-        const padded: Array<Date | null> = [...Array(firstWeekday).fill(null), ...grid];
-        const weeks: Array<Array<Date | null>> = [];
-        for (let i = 0; i < padded.length; i += 7) weeks.push(padded.slice(i, i + 7));
-        return weeks;
-    }, []);
+    const baseUrlSummaries = useMemo(() => summarizeByBaseUrl(), [days]);
 
     const monthCells = useMemo(() => {
         const first = new Date(cursor.year, cursor.month, 1);
         const daysInMonth = new Date(cursor.year, cursor.month + 1, 0).getDate();
-        const lead = first.getDay();
-        const cells: Array<Date | null> = [...Array(lead).fill(null)];
+        const cells: Array<Date | null> = [...Array(first.getDay()).fill(null)];
         for (let i = 1; i <= daysInMonth; i++) cells.push(new Date(cursor.year, cursor.month, i));
         while (cells.length % 7 !== 0) cells.push(null);
         return cells;
     }, [cursor]);
 
+    /** 月历下方的迷你趋势：本月每日总量的柱状条，一眼看出哪天密集。 */
+    const monthDailyTotals = useMemo(() => {
+        const daysInMonth = new Date(cursor.year, cursor.month + 1, 0).getDate();
+        const out: Array<{ day: number; total: number }> = [];
+        for (let i = 1; i <= daysInMonth; i++) {
+            const key = dateKey(new Date(cursor.year, cursor.month, i));
+            out.push({ day: i, total: byDate.get(key)?.totals.total ?? 0 });
+        }
+        return out;
+    }, [cursor, byDate]);
+
     const selected = selectedDate ? byDate.get(selectedDate) ?? null : null;
 
-    const oldestMonthIndex = useMemo(() => {
-        const d = new Date(today.getFullYear(), today.getMonth() - (CALENDAR_MONTHS_BACK - 1), 1);
-        return d.getFullYear() * 12 + d.getMonth();
-    }, [today]);
+    const oldestMonthIndex = useMemo(
+        () => new Date(today.getFullYear(), today.getMonth() - (CALENDAR_MONTHS_BACK - 1), 1).getFullYear() * 12
+            + new Date(today.getFullYear(), today.getMonth() - (CALENDAR_MONTHS_BACK - 1), 1).getMonth(),
+        [today],
+    );
     const currentMonthIndex = cursor.year * 12 + cursor.month;
-
-    const queryBalance = useCallback(async (config: ApiConfig) => {
-        setBalances(prev => ({ ...prev, [config.id]: { status: "loading" } }));
-        try {
-            const baseUrl = determineBaseUrl(config);
-            if (!config.apiKey) {
-                setBalances(prev => ({ ...prev, [config.id]: { status: "error", error: "未填写 API Key" } }));
-                return;
-            }
-            if (!baseUrl) {
-                setBalances(prev => ({ ...prev, [config.id]: { status: "error", error: "缺少 Base URL，无法定位余额接口" } }));
-                return;
-            }
-            const res = await fetch("/api/llm-balance", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ baseUrl, apiKey: config.apiKey, provider: config.provider }),
-            });
-            const json = await res.json().catch(() => null) as
-                | { ok?: boolean; entries?: BalanceEntry[]; available?: boolean; error?: string; note?: string; shape?: string }
-                | null;
-            if (!json?.ok) {
-                setBalances(prev => ({ ...prev, [config.id]: { status: "error", error: json?.error || `HTTP ${res.status}` } }));
-                return;
-            }
-            setBalances(prev => ({
-                ...prev,
-                [config.id]: { status: "ok", entries: json.entries ?? [], available: json.available, note: json.note, shape: json.shape },
-            }));
-        } catch (err) {
-            setBalances(prev => ({
-                ...prev,
-                [config.id]: { status: "error", error: err instanceof Error ? err.message : String(err) },
-            }));
-        }
-    }, []);
-
-    const queryAll = useCallback(() => {
-        for (const c of configs) void queryBalance(c);
-    }, [configs, queryBalance]);
 
     if (!loaded) return null;
 
     const hasData = days.length > 0;
+    const maxMonthly = monthDailyTotals.reduce((m, d) => Math.max(m, d.total), 0);
 
     return (
         <div className="flex flex-col gap-6 pb-20">
@@ -239,16 +187,21 @@ export function UsageStatistics() {
                 </button>
             </div>
 
-            {/* ── 总览 ── */}
+            {/* ── 总览：纯色卡片，承载最关键的四个数字 ── */}
             <div className="grid grid-cols-2 gap-3 px-2">
                 <StatTile icon={<Brain size={16} />} label="总 Token" value={formatTokens(totals.total)} />
-                <StatTile icon={<Flame size={16} />} label="调用次数" value={String(totals.calls)} />
-                <StatTile icon={<Coins size={16} />} label="估算花费" value={formatMoney(totals.cost, "CNY")} hint={totals.cost === undefined ? "未配置单价" : undefined} />
+                <StatTile icon={<ChartColumn size={16} />} label="调用次数" value={String(totals.calls)} />
+                <StatTile
+                    icon={<Coins size={16} />}
+                    label="估算花费"
+                    value={formatCost(totals.cost, totals.unpricedCalls) ?? "未计价"}
+                    hint={totals.cost === undefined ? "在「API 设置」里为模型填价格" : undefined}
+                />
                 <StatTile icon={<CalendarDays size={16} />} label="有记录天数" value={String(days.length)} />
             </div>
             <div className="px-4 ts-12" style={{ color: "var(--c-icon)" }}>
                 输入 {formatTokens(totals.prompt)} · 输出 {formatTokens(totals.completion)}
-                {totals.cost === undefined && " · 花费需在「API 设置」里为模型填写单价后才会计价"}
+                {totals.cost !== undefined && " · 按 token 与按次的金额分开计算，不相加"}
             </div>
 
             {!hasData && (
@@ -261,62 +214,7 @@ export function UsageStatistics() {
                 </div>
             )}
 
-            {/* ── 年度热力图 ── */}
-            {hasData && (
-                <section className="mx-2">
-                    <SectionTitle icon={<Flame size={15} />} title="近一年消耗热力图" />
-                    <div className="ui-list-card-expandable p-3">
-                        <div className="flex gap-[3px] overflow-x-auto pb-1">
-                            {heatmapGrid.map((week, wi) => (
-                                <div key={wi} className="flex flex-col gap-[3px]">
-                                    {week.map((day, di) => {
-                                        if (!day) return <div key={di} style={{ width: 11, height: 11 }} />;
-                                        const key = dateKey(day);
-                                        const rec = byDate.get(key);
-                                        const level = tokenLevel(rec?.totals.total ?? 0, maxDayTotal);
-                                        return (
-                                            <button
-                                                key={di}
-                                                type="button"
-                                                title={`${key} · ${formatTokens(rec?.totals.total ?? 0)} tokens · ${rec?.totals.calls ?? 0} 次`}
-                                                onClick={() => setSelectedDate(key)}
-                                                className="rounded-[2px]"
-                                                style={{
-                                                    width: 11,
-                                                    height: 11,
-                                                    border: "none",
-                                                    cursor: "pointer",
-                                                    background: level === 0
-                                                        ? "var(--c-panel-border)"
-                                                        : `color-mix(in srgb, var(--c-icon-teal, #2dd4bf) ${level * 22 + 12}%, transparent)`,
-                                                }}
-                                            />
-                                        );
-                                    })}
-                                </div>
-                            ))}
-                        </div>
-                        <div className="flex items-center justify-end gap-1 mt-2 ts-12" style={{ color: "var(--c-icon)" }}>
-                            <span>少</span>
-                            {[0, 1, 2, 3, 4].map(l => (
-                                <span
-                                    key={l}
-                                    className="rounded-[2px]"
-                                    style={{
-                                        width: 10, height: 10, display: "inline-block",
-                                        background: l === 0
-                                            ? "var(--c-panel-border)"
-                                            : `color-mix(in srgb, var(--c-icon-teal, #2dd4bf) ${l * 22 + 12}%, transparent)`,
-                                    }}
-                                />
-                            ))}
-                            <span>多</span>
-                        </div>
-                    </div>
-                </section>
-            )}
-
-            {/* ── 月历 ── */}
+            {/* ── 月历热力 + 当月柱状趋势 ── */}
             {hasData && (
                 <section className="mx-2">
                     <div className="flex items-center justify-between mb-2">
@@ -336,6 +234,8 @@ export function UsageStatistics() {
                             >›</button>
                         </div>
                     </div>
+
+                    {/* 磨砂卡片承载网格：与上方纯色统计卡形成质感对比 */}
                     <div className="ui-list-card-expandable p-3">
                         <div className="grid grid-cols-7 gap-[3px] mb-1">
                             {WEEKDAY_LABELS.map(w => (
@@ -356,24 +256,44 @@ export function UsageStatistics() {
                                         onClick={() => setSelectedDate(key)}
                                         className="rounded-[4px] flex flex-col items-center justify-center"
                                         style={{
-                                            height: 34,
-                                            border: isToday ? "1px solid var(--c-icon)" : "1px solid transparent",
+                                            height: 36,
+                                            border: isToday ? "1px solid var(--c-icon-green, #18A957)" : "1px solid transparent",
                                             cursor: "pointer",
-                                            background: level === 0
-                                                ? "var(--c-card)"
-                                                : `color-mix(in srgb, var(--c-icon-teal, #2dd4bf) ${level * 22 + 12}%, transparent)`,
+                                            background: heatBackground(level),
                                         }}
-                                        title={`${key} · ${formatTokens(rec?.totals.total ?? 0)} tokens`}
+                                        title={`${key} · ${formatTokens(rec?.totals.total ?? 0)} tokens · ${rec?.totals.calls ?? 0} 次`}
                                     >
                                         <span className="ts-12" style={{ color: "var(--c-text)" }}>{day.getDate()}</span>
                                         {rec && rec.totals.total > 0 && (
-                                            <span className="ts-12" style={{ fontSize: 9, color: "var(--c-icon)" }}>
-                                                {formatTokens(rec.totals.total)}
-                                            </span>
+                                            <span style={{ fontSize: 9, color: "var(--c-icon)" }}>{formatTokens(rec.totals.total)}</span>
                                         )}
                                     </button>
                                 );
                             })}
+                        </div>
+
+                        {/* 当月每日柱状趋势：柱高按当月峰值归一 */}
+                        <div className="flex items-end gap-[2px] mt-3" style={{ height: 40 }}>
+                            {monthDailyTotals.map(d => (
+                                <div
+                                    key={d.day}
+                                    className="flex-1 rounded-t-[2px]"
+                                    style={{
+                                        height: maxMonthly > 0 ? `${Math.max(2, (d.total / maxMonthly) * 100)}%` : 2,
+                                        background: d.total > 0 ? "var(--c-icon-green, #18A957)" : "var(--c-panel-border)",
+                                        minWidth: 3,
+                                    }}
+                                    title={`${cursor.month + 1}/${d.day} · ${formatTokens(d.total)} tokens`}
+                                />
+                            ))}
+                        </div>
+                        <div className="flex items-center justify-between mt-2 ts-12" style={{ color: "var(--c-icon)" }}>
+                            <span>1 日</span>
+                            <span className="flex items-center gap-1">
+                                <span className="rounded-[2px]" style={{ width: 10, height: 10, background: "var(--c-panel-border)" }} />无记录
+                                <span className="rounded-[2px] ml-2" style={{ width: 10, height: 10, background: "var(--c-icon-green, #18A957)" }} />有消耗
+                            </span>
+                            <span>{new Date(cursor.year, cursor.month + 1, 0).getDate()} 日</span>
                         </div>
                     </div>
                 </section>
@@ -390,7 +310,7 @@ export function UsageStatistics() {
                             <div className="flex flex-col gap-2">
                                 <div className="ts-13" style={{ color: "var(--c-text)" }}>
                                     共 {formatTokens(selected.totals.total)} tokens · {selected.totals.calls} 次调用
-                                    {selected.cost !== undefined && ` · 约 ${formatMoney(selected.cost, "CNY")}`}
+                                    {selected.cost && ` · ${formatCost(selected.cost, selected.unpricedCalls)}`}
                                 </div>
                                 {Object.entries(selected.routes).map(([routeId, route]) => (
                                     <div key={routeId} className="flex flex-col gap-1 pt-2" style={{ borderTop: "1px solid var(--c-panel-border)" }}>
@@ -402,10 +322,10 @@ export function UsageStatistics() {
                                         </div>
                                         {Object.entries(route.models).map(([model, mu]) => (
                                             <div key={model} className="flex items-center justify-between ts-12" style={{ color: "var(--c-icon)" }}>
-                                                <span className="truncate" style={{ maxWidth: "62%" }}>{model}</span>
+                                                <span className="truncate" style={{ maxWidth: "58%" }}>{model}</span>
                                                 <span>
                                                     {formatTokens(mu.total)}
-                                                    {mu.cost !== undefined ? ` · ${formatMoney(mu.cost, "CNY")}` : " · 未计价"}
+                                                    {formatCost(mu.cost, mu.unpricedCalls) ? ` · ${formatCost(mu.cost, mu.unpricedCalls)}` : ""}
                                                 </span>
                                             </div>
                                         ))}
@@ -417,7 +337,7 @@ export function UsageStatistics() {
                 </section>
             )}
 
-            {/* ── 各路由用量 ── */}
+            {/* ── 各路由消耗 ── */}
             {routeSummaries.length > 0 && (
                 <section className="mx-2">
                     <SectionTitle icon={<Brain size={15} />} title="各路由消耗" />
@@ -440,17 +360,27 @@ export function UsageStatistics() {
                                         </span>
                                         <span className="ts-12 shrink-0" style={{ color: "var(--c-icon)" }}>
                                             {formatTokens(route.total)} · {route.calls} 次
-                                            {route.cost !== undefined && ` · ${formatMoney(route.cost, "CNY")}`}
                                         </span>
                                     </button>
                                     {expanded && (
                                         <div className="px-3 pb-3 flex flex-col gap-1">
+                                            {route.baseUrl && (
+                                                <div className="ts-12 truncate" style={{ color: "var(--c-icon)" }}>
+                                                    入口：{route.baseUrl}
+                                                </div>
+                                            )}
+                                            {formatCost(route.cost, route.unpricedCalls) && (
+                                                <div className="ts-12" style={{ color: "var(--c-text)" }}>
+                                                    花费：{formatCost(route.cost, route.unpricedCalls)}
+                                                </div>
+                                            )}
                                             {Object.entries(route.models).map(([model, mu]) => (
                                                 <div key={model} className="flex items-center justify-between ts-12" style={{ color: "var(--c-icon)" }}>
-                                                    <span className="truncate" style={{ maxWidth: "58%" }}>{model}</span>
+                                                    <span className="truncate" style={{ maxWidth: "52%" }}>{model}</span>
                                                     <span>
                                                         入 {formatTokens(mu.prompt)} · 出 {formatTokens(mu.completion)}
-                                                        {mu.cost !== undefined ? ` · ${formatMoney(mu.cost, "CNY")}` : " · 未计价"}
+                                                        {mu.billingMode === "per_call" ? " · 按次" : ""}
+                                                        {formatCost(mu.cost, mu.unpricedCalls) ? ` · ${formatCost(mu.cost, mu.unpricedCalls)}` : ""}
                                                     </span>
                                                 </div>
                                             ))}
@@ -469,17 +399,18 @@ export function UsageStatistics() {
                 </section>
             )}
 
-            {/* ── 按厂商汇总 ── */}
-            {providerSummaries.length > 1 && (
+            {/* ── 按入口地址（baseUrl）分类：同一 provider 可能有多个中转站 ── */}
+            {baseUrlSummaries.length > 1 && (
                 <section className="mx-2">
-                    <SectionTitle icon={<Wallet size={15} />} title="按厂商汇总" />
-                    <div className="ui-list-card-expandable p-3 flex flex-col gap-1">
-                        {providerSummaries.map(p => (
-                            <div key={p.provider} className="flex items-center justify-between ts-13">
-                                <span style={{ color: "var(--c-text)" }}>{p.provider}</span>
-                                <span style={{ color: "var(--c-icon)" }}>
-                                    {formatTokens(p.total)} · {p.calls} 次
-                                    {p.cost !== undefined && ` · ${formatMoney(p.cost, "CNY")}`}
+                    <SectionTitle icon={<ChartColumn size={15} />} title="按入口地址消耗" />
+                    <div className="ui-list-card-expandable p-3 flex flex-col gap-2">
+                        {baseUrlSummaries.map(entry => (
+                            <div key={entry.baseUrl} className="flex items-center justify-between gap-2 ts-13">
+                                <span className="truncate" style={{ color: "var(--c-text)", maxWidth: "62%" }} title={entry.baseUrl}>
+                                    {entry.baseUrl}
+                                </span>
+                                <span className="shrink-0" style={{ color: "var(--c-icon)" }}>
+                                    {formatTokens(entry.total)} · {entry.calls} 次
                                 </span>
                             </div>
                         ))}
@@ -487,106 +418,28 @@ export function UsageStatistics() {
                 </section>
             )}
 
-            {/* ── 各路由余额 ── */}
-            <section className="mx-2">
-                <div className="flex items-center justify-between mb-2">
-                    <SectionTitle icon={<Wallet size={15} />} title="各路由余额" />
-                    <button
-                        type="button"
-                        onClick={queryAll}
-                        className="ui-btn rounded-[16px] px-3"
-                        disabled={configs.length === 0}
-                    >
-                        <RefreshCw size={13} /> 全部查询
-                    </button>
-                </div>
-
-                {configs.length === 0 ? (
-                    <div className="ui-list-card-expandable p-3 ts-13" style={{ color: "var(--c-icon)" }}>
-                        还没有 API 配置。到「API 设置」添加后即可在这里查询余额。
+            {/* ── 按厂商汇总 ── */}
+            {providerSummaries.length > 1 && (
+                <section className="mx-2">
+                    <SectionTitle icon={<Brain size={15} />} title="按厂商汇总" />
+                    <div className="ui-list-card-expandable p-3 flex flex-col gap-2">
+                        {providerSummaries.map(p => (
+                            <div key={p.provider} className="flex items-center justify-between gap-2 ts-13">
+                                <span style={{ color: "var(--c-text)" }}>{p.provider}</span>
+                                <span style={{ color: "var(--c-icon)" }}>
+                                    {formatTokens(p.total)} · {p.calls} 次
+                                    {formatCost(p.cost, p.unpricedCalls) ? ` · ${formatCost(p.cost, p.unpricedCalls)}` : ""}
+                                </span>
+                            </div>
+                        ))}
                     </div>
-                ) : (
-                    <div className="flex flex-col gap-2">
-                        {configs.map(config => {
-                            const state = balances[config.id];
-                            return (
-                                <div key={config.id} className="ui-list-card-expandable p-3 flex flex-col gap-2">
-                                    <div className="flex items-center justify-between gap-2">
-                                        <span className="flex items-center gap-2 min-w-0">
-                                            <span className="truncate ts-14 font-medium" style={{ color: "var(--c-text)" }}>
-                                                {config.name || config.provider}
-                                            </span>
-                                            <span className="ui-badge shrink-0" data-variant="muted">{config.provider}</span>
-                                        </span>
-                                        <button
-                                            type="button"
-                                            className="ui-btn rounded-[16px] px-3 shrink-0"
-                                            onClick={() => void queryBalance(config)}
-                                            disabled={state?.status === "loading"}
-                                        >
-                                            {state?.status === "loading" ? "查询中…" : "查询"}
-                                        </button>
-                                    </div>
+                </section>
+            )}
 
-                                    {state?.status === "error" && (
-                                        <div className="ts-12" style={{ color: "var(--c-danger, #f87171)" }}>
-                                            查询失败：{state.error}
-                                        </div>
-                                    )}
-                                    {state?.status === "ok" && (
-                                        <div className="flex flex-col gap-1">
-                                            {state.entries.length === 0 && (
-                                                <div className="ts-12" style={{ color: "var(--c-icon)" }}>接口返回了空余额列表。</div>
-                                            )}
-                                            {state.entries.map((e, i) => (
-                                                <div key={i} className="flex items-center justify-between ts-13">
-                                                    <span style={{ color: "var(--c-icon)" }}>
-                                                        可用余额{e.currency ? ` (${e.currency})` : ""}
-                                                        {e.unit ? ` · ${e.unit}` : ""}
-                                                    </span>
-                                                    <span className="font-medium" style={{ color: "var(--c-text)" }}>
-                                                        {formatMoney(e.total, e.currency)}
-                                                    </span>
-                                                </div>
-                                            ))}
-                                            {state.entries[0]?.granted !== undefined && (
-                                                <div className="flex items-center justify-between ts-12" style={{ color: "var(--c-icon)" }}>
-                                                    <span>其中赠金</span>
-                                                    <span>{formatMoney(state.entries[0].granted, state.entries[0].currency)}</span>
-                                                </div>
-                                            )}
-                                            {state.entries[0]?.toppedUp !== undefined && (
-                                                <div className="flex items-center justify-between ts-12" style={{ color: "var(--c-icon)" }}>
-                                                    <span>其中充值</span>
-                                                    <span>{formatMoney(state.entries[0].toppedUp, state.entries[0].currency)}</span>
-                                                </div>
-                                            )}
-                                            {state.entries[0]?.used !== undefined && (
-                                                <div className="flex items-center justify-between ts-12" style={{ color: "var(--c-icon)" }}>
-                                                    <span>已用</span>
-                                                    <span>{formatMoney(state.entries[0].used, state.entries[0].currency)}</span>
-                                                </div>
-                                            )}
-                                            {state.available === false && (
-                                                <div className="ts-12" style={{ color: "var(--c-danger, #f87171)" }}>
-                                                    账号余额已不足以继续调用。
-                                                </div>
-                                            )}
-                                            {state.note && (
-                                                <div className="ts-12" style={{ color: "var(--c-icon)" }}>{state.note}</div>
-                                            )}
-                                        </div>
-                                    )}
-                                </div>
-                            );
-                        })}
-                    </div>
-                )}
-                <div className="ts-12 mt-2 px-1" style={{ color: "var(--c-icon)" }}>
-                    余额由服务端代理查询（浏览器直连会被跨域拦住）。中转站若只返回站内额度单位，
-                    这里会标注「未换算为货币」，不会拿一个猜测的汇率换算出一个看似精确的数字。
-                </div>
-            </section>
+            <div className="ts-12 px-3" style={{ color: "var(--c-icon)" }}>
+                花费来自你在「API 设置」里为各模型填写的价格；未填价的模型显示为「未计价」，
+                与「花费为 0」区分开。按 token 计费与按次计费是两种口径，始终分开显示、不相加。
+            </div>
         </div>
     );
 }
@@ -607,7 +460,7 @@ function StatTile({ icon, label, value, hint }: { icon: React.ReactNode; label: 
                 {icon}
                 {label}
             </span>
-            <span className="ts-20 font-bold" style={{ color: "var(--c-text)" }}>{value}</span>
+            <span className="ts-18 font-bold" style={{ color: "var(--c-text)" }}>{value}</span>
             {hint && <span className="ts-12" style={{ color: "var(--c-icon)" }}>{hint}</span>}
         </div>
     );

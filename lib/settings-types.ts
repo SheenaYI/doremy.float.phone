@@ -142,6 +142,23 @@ export type RegexConfig = SettingItemMeta & {
 };
 
 // --- ApiConfig (migrated from api-settings.tsx) ---
+/** 计费方式：按 token 用量，或按调用次数。 */
+export type BillingMode = "per_token" | "per_call";
+
+/**
+ * 单个模型的计费配置。三种情况都要能表达清楚：
+ *   - 按 token：填 input / output（元 / 百万 token）
+ *   - 按次：填 perCall（元 / 次），token 数不参与计价
+ *   - 两者都填：mode 决定用哪个，避免出现「两个数字都在但不知道用哪个」的歧义
+ * mode 缺省视为 per_token，兼容只填了 input/output 的历史配置。
+ */
+export type ModelPriceConfig = {
+    mode?: BillingMode;
+    input?: number;
+    output?: number;
+    perCall?: number;
+};
+
 export type ApiConfig = {
     id: string;
     name?: string;
@@ -154,12 +171,18 @@ export type ApiConfig = {
     enableImageGeneration: boolean;
     preventEmptyGenerateRambling?: boolean;
     /**
-     * 各模型的单价配置（元 / 百万 token），供用量统计估算花费。
+     * 各模型的计费配置，供用量统计估算花费。
+     *
      * 刻意不做成全局价格表：各家模型定价会变，内置一张表迟早过期且是错的，
      * 所以由用户按自己实际付费的价格填；没填的模型在统计里显示为「未计价」，
      * 与「花费为 0」区分开。normalizeApiConfig 走的是 {...rest}，新增字段天然向后兼容。
+     *
+     * billingMode：按 token 还是按次。部分中转站（尤其是包月/按次套餐）按请求次数计费，
+     * token 数在那类站点上根本不参与计价，因此两种模式的成本必须分开累计 ——
+     * 把「按次」的钱和「按 token」的钱加成一个总数，会给出一个没有意义的数字。
+     * 缺省视为按 token（与历史配置一致）。
      */
-    modelPrices?: Record<string, { input?: number; output?: number }>;
+    modelPrices?: Record<string, ModelPriceConfig>;
 };
 
 // --- VoiceApiConfig (migrated from voice-settings.tsx) ---

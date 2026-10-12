@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useContext } from "react";
 import { Plus, RefreshCw, Rss, AlertCircle, FileEdit, Trash2, X, Check } from "lucide-react";
 import { SettingsContext } from "../phone-settings-app";
-import type { ApiConfig } from "@/lib/settings-types";
+import type { ApiConfig, ModelPriceConfig } from "@/lib/settings-types";
 import { loadApiConfigs, removeApiConfigReferences, saveApiConfigs } from "@/lib/settings-storage";
 import { generateEmbedding, isEmbeddingModelName } from "@/lib/memory-embedding";
 import { ConfirmDialog } from "@/components/ui/modal";
@@ -101,16 +101,25 @@ export function ApiSettings() {
     }, [configs, persist]);
 
     /**
-     * 写入某个模型的单价（元 / 百万 token）。
+     * 写入某个模型的计费配置。
+     *
      * 空字符串表示「不配这一项」，要真正删除键而不是留一个 undefined —— 否则
      * 价格表里会残留一堆空键，让 resolveUsagePrice 的前缀匹配行为变得难以预测。
+     * 三项都清空时删掉整个模型条目，让「未计价」这个状态干净地回到初始。
      */
-    const updateModelPrice = useCallback((id: string, model: string, field: "input" | "output", raw: string) => {
+    const updateModelPrice = useCallback((
+        id: string,
+        model: string,
+        field: "input" | "output" | "perCall" | "mode",
+        raw: string,
+    ) => {
         const config = configs.find(c => c.id === id);
         if (!config) return;
         const table = { ...(config.modelPrices ?? {}) };
-        const entry = { ...(table[model] ?? {}) };
-        if (raw.trim() === "") {
+        const entry: ModelPriceConfig = { ...(table[model] ?? {}) };
+        if (field === "mode") {
+            entry.mode = raw === "per_call" ? "per_call" : "per_token";
+        } else if (raw.trim() === "") {
             delete entry[field];
         } else {
             const n = Number(raw);
@@ -118,7 +127,8 @@ export function ApiSettings() {
             if (!Number.isFinite(n) || n < 0) return;
             entry[field] = n;
         }
-        if (entry.input === undefined && entry.output === undefined) {
+        const isEmpty = entry.input === undefined && entry.output === undefined && entry.perCall === undefined;
+        if (isEmpty) {
             delete table[model];
         } else {
             table[model] = entry;
@@ -445,43 +455,71 @@ export function ApiSettings() {
                                             return (
                                                 <div className="flex flex-col gap-2">
                                                     <label className="menu-desc ml-1">
-                                                        模型单价（元 / 百万 token，可选）
+                                                        模型计费（可选）
                                                         <span style={{ color: "#888", marginLeft: 6, fontSize: "0.85em" }}>
-                                                            仅用于用量统计的花费估算
+                                                            仅用于用量统计的花费估算；按次套餐的站点请选「按次」
                                                         </span>
                                                     </label>
                                                     {models.map(model => {
                                                         const price = config.modelPrices?.[model];
+                                                        const mode = price?.mode ?? "per_token";
                                                         return (
-                                                            <div key={model} className="flex items-center gap-2">
+                                                            <div key={model} className="flex flex-wrap items-center gap-2">
                                                                 <span
                                                                     className="ts-12 flex-1 truncate"
-                                                                    style={{ color: "var(--c-text)" }}
+                                                                    style={{ color: "var(--c-text)", minWidth: 80 }}
                                                                     title={model}
                                                                 >
                                                                     {model}
                                                                 </span>
-                                                                <Input
-                                                                    type="number"
-                                                                    min="0"
-                                                                    step="0.01"
-                                                                    className="w-[76px]"
-                                                                    value={price?.input ?? ""}
-                                                                    onChange={(e) => updateModelPrice(config.id, model, "input", e.target.value)}
-                                                                    placeholder="输入"
-                                                                />
-                                                                <Input
-                                                                    type="number"
-                                                                    min="0"
-                                                                    step="0.01"
-                                                                    className="w-[76px]"
-                                                                    value={price?.output ?? ""}
-                                                                    onChange={(e) => updateModelPrice(config.id, model, "output", e.target.value)}
-                                                                    placeholder="输出"
-                                                                />
+                                                                <select
+                                                                    className="ui-select shrink-0"
+                                                                    style={{ width: 78 }}
+                                                                    value={mode}
+                                                                    onChange={(e) => updateModelPrice(config.id, model, "mode", e.target.value)}
+                                                                >
+                                                                    <option value="per_token">按 token</option>
+                                                                    <option value="per_call">按次</option>
+                                                                </select>
+                                                                {mode === "per_call" ? (
+                                                                    <Input
+                                                                        type="number"
+                                                                        min="0"
+                                                                        step="0.01"
+                                                                        className="w-[86px]"
+                                                                        value={price?.perCall ?? ""}
+                                                                        onChange={(e) => updateModelPrice(config.id, model, "perCall", e.target.value)}
+                                                                        placeholder="元/次"
+                                                                    />
+                                                                ) : (
+                                                                    <>
+                                                                        <Input
+                                                                            type="number"
+                                                                            min="0"
+                                                                            step="0.01"
+                                                                            className="w-[78px]"
+                                                                            value={price?.input ?? ""}
+                                                                            onChange={(e) => updateModelPrice(config.id, model, "input", e.target.value)}
+                                                                            placeholder="输入"
+                                                                        />
+                                                                        <Input
+                                                                            type="number"
+                                                                            min="0"
+                                                                            step="0.01"
+                                                                            className="w-[78px]"
+                                                                            value={price?.output ?? ""}
+                                                                            onChange={(e) => updateModelPrice(config.id, model, "output", e.target.value)}
+                                                                            placeholder="输出"
+                                                                        />
+                                                                    </>
+                                                                )}
                                                             </div>
                                                         );
                                                     })}
+                                                    <div className="ts-12" style={{ color: "#888" }}>
+                                                        按 token 填「元 / 百万 token」；按次填「元 / 次」。
+                                                        两种计费的金额在统计里分开显示，不相加。
+                                                    </div>
                                                 </div>
                                             );
                                         })()}

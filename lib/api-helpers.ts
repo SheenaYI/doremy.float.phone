@@ -20,7 +20,7 @@ const SIMPLE_ANTHROPIC_AUTO_MAX_TOKENS = 8192;
  * 统计绝不该让一次成功的模型调用变成失败。
  */
 export function recordUsageForCall(
-    config: Pick<ApiConfig, "id" | "name" | "provider" | "defaultModel" | "modelPrices"> | undefined,
+    config: Pick<ApiConfig, "id" | "name" | "provider" | "defaultModel" | "baseUrl" | "modelPrices"> | undefined,
     usage: unknown,
     options?: { source?: UsageSource; model?: string },
 ): void {
@@ -29,7 +29,10 @@ export function recordUsageForCall(
         const model = options?.model || config?.defaultModel;
         recordUsage({
             usage: usage as { prompt_tokens?: unknown; completion_tokens?: unknown; total_tokens?: unknown },
-            config,
+            // 记下 baseUrl：同一 provider 可能配了多条不同中转站，按入口分类才看得出哪个在烧钱
+            config: config
+                ? { ...config, baseUrl: config.baseUrl || determineBaseUrl(config) }
+                : undefined,
             model,
             source: options?.source ?? "background",
             price: resolveUsagePrice(model, config?.modelPrices),
