@@ -1043,7 +1043,6 @@ export function MemoryBankPage({
                     <div className="mem-room-chips">
                         <button
                             className="ui-chip"
-                            {...(roomFilter === "all" ? { "data-selected": "" } : {})}
                             onClick={() => setRoomFilter("all")}
                         >
                             全部

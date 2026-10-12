@@ -902,8 +902,8 @@ export function VnPlayer({ characterId, chapterIndex, onClose, onChapterEnd, vnT
     setAutoMode(false);
     let bg = "", sp = "";
     for (let i = 0; i <= idx; i++) {
-      if (allFrames[i].bg) bg = allFrames[i].bg;
-      if (allFrames[i].sprite) sp = allFrames[i].sprite;
+      if (allFrames[i].bg) bg = allFrames[i].bg!;
+      if (allFrames[i].sprite) sp = allFrames[i].sprite!;
     }
     setWaitingForInput(false);
     if (bg) setCurrentScene(bg);
