@@ -9,6 +9,7 @@ import { resolveContactCard } from "@/lib/contact-card";
 import { loadCharacters } from "@/lib/character-storage";
 import { CHAT_OPEN_SESSION_EVENT, dispatchOpenAddContact } from "@/lib/chat-notification-events";
 import { ContactCardGenerateFlow } from "@/components/chat/contact-card-generate-flow";
+import { ListeningInviteCard } from "@/components/chat/listening-invite-card";
 import { MediaPreviewOverlay } from "@/components/chat/media-preview-overlay";
 import { findStickerByName } from "@/lib/sticker-data";
 import { splitBilingualText } from "@/lib/bilingual-text";
@@ -92,6 +93,8 @@ function PluginKindBubble({ msg, kind }: { msg: ChatMessage; kind: string }) {
  */
 export const MessageBubble = memo(function MessageBubble({ msg, onUpdate, charName, userName, onSystemMessage, groupSize, onShowDetail, characterId, onMusicPlay, onActionSelect, onMeetingInviteAction, displayContent, defaultTranslationExpanded = false }: MessageBubbleProps) {
     switch (msg.mediaType) {
+        case "listening_invite":
+            return <ListeningInviteCard msg={msg} />;
         case "red_packet":
             return <RedPacketBubble msg={msg} charName={charName} userName={userName} groupSize={groupSize} onShowDetail={onShowDetail} />;
         case "transfer":

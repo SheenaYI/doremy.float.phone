@@ -131,3 +131,19 @@ https://github.com/doremy1203/doremy.float.phone/blob/main/android-shell/README.
 本仓库只是在两位老师的成果上，做了一些维护、补充和适配。开源项目的贡献关系有时比较复杂，如果本说明中存在来源标注不清或归属错误，欢迎指出，我会及时更正。
 
 也希望大家在尊重原有成果的前提下，继续探索和开发。
+
+## 六、第三方代码来源（AGPL-3.0 署名）
+
+本仓库以 AGPL-3.0 授权发布。以下功能参考或移植了同为 AGPL-3.0 的第三方项目代码，
+按许可要求在此注明来源：
+
+- **一起听（Listen Together）**、歌词上下文与音乐聆听指令
+  - 来源：[Yyk-Y2k/ai-virtual-phone-Y2Kversion](https://github.com/Yyk-Y2k/ai-virtual-phone-Y2Kversion)（AGPL-3.0）
+  - 涉及文件：`lib/listen-together.ts`、`lib/music-listening.ts`、`lib/music-listening-capture.ts`、
+    `lib/music-song-match.ts`、`lib/music-share-resolution.ts`、
+    `components/chat/listening-invite-card.tsx`、`components/music/chat-music-panel.tsx`
+  - 本地改动：上游依赖其多用户「身份空间」机制（`identity-runtime` / `identity-access`），
+    本仓库没有该机制，改为由 `lib/local-identity.ts` 提供单用户语义的同名替身；
+    邀请卡片的交互由上游的滑动手势改为明确的接受/婉拒按钮（手势动画依赖上游
+    与本仓库已分叉的音乐样式表，留待后续单独适配）。
+

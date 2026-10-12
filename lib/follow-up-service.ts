@@ -31,6 +31,7 @@ import {
 } from "./idle-reconnect-storage";
 import { loadFollowUpConfig } from "./settings-storage";
 import { parseAIResponse } from "./rich-message-parser";
+import { applyListeningRoomReply } from "./listen-together";
 import type { ParsedMessagePart } from "./rich-message-parser";
 import { getStatusRegionConfig, isCustomStatusRegionActive } from "./chat-status-region";
 import { isKnownStickerLabel } from "./sticker-data";
@@ -1014,7 +1015,9 @@ export async function parseAndSaveResponse(
     const sess = sessions.find(s => s.id === sessionId);
     const previousState = sess && !sess.isGroup ? getLatestCharacterStateValues(sess.contactId) : [];
 
-    const { parts, stateValues, freshStateValues, statusPanel, innerMonologue } = parseAIResponse(rawText, previousState);
+    // 先摘掉一起听协议标记再解析正文：标记要转成房间状态与系统消息，
+    // 绝不能作为可见文本留在气泡里（模型看不到它们，用户也不该看到）。
+    const { parts, stateValues, freshStateValues, statusPanel, innerMonologue } = parseAIResponse(applyListeningRoomReply(rawText, sessionId), previousState);
 
     // 自定义状态栏渲染戳：追发/屏幕速聊/离线回传落库的消息此前从不盖
     // statusRegionMode，custom 模式下 [状态栏] 原文被当 markdown 渲染成一坨

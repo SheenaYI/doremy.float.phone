@@ -7,6 +7,7 @@ import { getAudioBlob, markTrackPlayed } from "./music-storage";
 import { findPlayableMatch, getNeteaseLyrics, getNeteasePlayUrl, getNeteasePlayInfo, getNeteaseSongDetail } from "./music-service";
 import { kvGet, kvSet, registerKvMigration } from "./kv-db";
 import { registerMusicControlBridge } from "./music-control-bridge";
+import { LOCAL_IDENTITY_ID } from "./local-identity";
 
 // ── Types ──
 
@@ -422,7 +423,13 @@ export function MusicProvider({ children }: { children: ReactNode }) {
     useEffect(() => {
         registerMusicControlBridge({
             getState: () => ({
+                // 单用户部署：快照归属固定身份。「一起听」会拿它与房间的身份比对，
+                // 两个值同源（都来自 local-identity），因此比对恒成立。
+                identityId: LOCAL_IDENTITY_ID,
                 currentTrack,
+                // 未播放时也把当前曲目当作"选中曲目"暴露出去，
+                // 这样一起听邀请卡片在播放前就能显示歌名与封面。
+                selectedTrack: currentTrack,
                 isPlaying,
                 currentTime,
                 duration,

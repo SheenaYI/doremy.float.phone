@@ -10,6 +10,8 @@ import type { RecentBlock, UnifiedRecentItem } from "./short-term-assembler";
 import { readDwellingLayoutCache } from "./dwelling-storage";
 import { formatDwellingContext } from "./dwelling-engine";
 import { matchesActiveTags } from "./content-tag-utils";
+import { listeningRoomPrompt, CHARACTER_LISTENING_INVITE_PROTOCOL } from "./listen-together";
+import { musicListeningHistoryText, MUSIC_LISTENING_INSTRUCTION } from "./music-listening";
 import { formatXiaohongshuShareForPrompt } from "./chat-share";
 import { stripStateAndInnerForPrompt } from "./prompt-sanitizer";
 import { formatPromptTimestamp, getPromptTimestampOptionsForTimeContext, resolvePromptTimeAware, type PromptTimestampOptions } from "./prompt-time";
@@ -1051,6 +1053,43 @@ export function assemblePromptPayload(input: AssemblerInput): LLMMessage[] {
         });
     }
 
+    // ── 一起听 ──
+    // 三条指令的触发条件不同，刻意分开：
+    //   1. 邀请协议只在「私聊 + 文本标签」下注入 —— 群聊里一起听无法确定对象，
+    //      而语音/视频标签下的对话由通话链路组织，不需要文本协议；
+    //   2. 一起听状态只在真有活跃房间时才注入（listeningRoomPrompt 内部判空）；
+    //   3. 音乐聆听指令在「正在一起听」或「历史里出现过音乐内容」时注入，
+    //      它约束的是模型如何谈论音乐，比邀请协议更长期有效。
+    const listeningSessionId = history.at(-1)?.sessionId;
+    if (appId === "chat" && activeTags.includes("text") && listeningSessionId) {
+        blocks.push({
+            text: CHARACTER_LISTENING_INVITE_PROTOCOL,
+            role: "system",
+            depth: 0,
+            order: Number.MAX_SAFE_INTEGER - 2,
+            marker: "character_listening_invite",
+        });
+    }
+    const together = appId === "chat" ? listeningRoomPrompt(character.id, listeningSessionId) : "";
+    if (together) {
+        blocks.push({
+            text: together,
+            role: "system",
+            depth: 0,
+            order: Number.MAX_SAFE_INTEGER - 1,
+            marker: "listen_together",
+        });
+    }
+    if (together || history.some(message => message.listeningContext || message.mediaType === "music_share" || message.mediaType === "music")) {
+        blocks.push({
+            text: MUSIC_LISTENING_INSTRUCTION,
+            role: "system",
+            depth: 0,
+            order: Number.MAX_SAFE_INTEGER,
+            marker: "music_listening",
+        });
+    }
+
     // --- Sort: depth descending, then order ascending ---
     blocks.sort((a, b) => {
         if (b.depth !== a.depth) return b.depth - a.depth;
@@ -1725,6 +1764,9 @@ function pushGroupChronologicalShortTermBlocks(params: {
         prevWasHistory = true;
 
         let body = msg.content;
+        // 用户分享过歌词时，把「明确引用的那一句」附到正文后 —— 只加这一句，
+        // 不把整段歌词塞进去，避免历史体积失控。
+        body = musicListeningHistoryText(msg, body);
         let imageUrl: string | undefined;
 
         const visionImageUrl = visionEnabled ? getPromptVisionImageUrl(msg) : undefined;
@@ -2205,6 +2247,8 @@ export function assembleGroupPromptPayload(input: GroupAssemblerInput): LLMMessa
             prevTs = ts;
             prevRole = promptRole;
             let body = msg.content; // Already annotated with [SenderName]: prefix
+            // 同上一处：用户分享的歌词引用要进历史正文，模型才知道用户指的是哪一句。
+            body = musicListeningHistoryText(msg, body);
             let imageUrl: string | undefined;
 
             const visionImageUrl = groupVisionEnabled ? getPromptVisionImageUrl(msg) : undefined;

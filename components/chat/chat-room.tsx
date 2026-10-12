@@ -53,11 +53,14 @@ import { useKeyboardDismissAutoSend } from "@/components/chat/use-keyboard-dismi
 import { cancelBailoutKey } from "@/lib/push-bailout-client";
 import { PENDING_REPLY_PREFIX } from "@/lib/friend-request-engine";
 import type { UserIdentity } from "@/components/settings/user-identity";
-import { AlertCircle, Blocks, Check, Trash2, User, ChevronLeft, ChevronRight, Clapperboard, Clock, Gift, Languages, Loader2, MoreHorizontal, X } from "lucide-react";
+import { AlertCircle, Blocks, Check, Headphones, Trash2, User, ChevronLeft, ChevronRight, Clapperboard, Clock, Gift, Languages, Loader2, MoreHorizontal, X } from "lucide-react";
 import { setDebugChatState } from "@/lib/debug-store";
 import { SessionCustomCSS } from "@/components/ui/session-custom-css";
 import { setChatActive } from "@/lib/music-action-queue";
 import { getMusicControlBridge } from "@/lib/music-control-bridge";
+import { inviteListeningRoom, leaveListeningRoom } from "@/lib/listen-together";
+import { captureMusicListeningContext } from "@/lib/music-listening-capture";
+import { ChatMusicPanel } from "@/components/music/chat-music-panel";
 import { findPlayableMatch, getNeteaseLyrics, getNeteaseSongDetail } from "@/lib/music-service";
 import { approveMemoryWriteRequest } from "@/lib/tool-executor";
 import type { MemoryWriteRequest, ToolResult } from "@/lib/tool-executor";
@@ -540,7 +543,7 @@ type PendingMessageJump = {
 };
 
 const TRANSIENT_MESSAGE_PREFIX = "ui-transient-";
-type RichModalKind = "photo" | "text_photo" | "red_packet" | "transfer" | "location" | "transfer_target" | "voice_msg" | "gift" | "system_instruction";
+type RichModalKind = "music" | "photo" | "text_photo" | "red_packet" | "transfer" | "location" | "transfer_target" | "voice_msg" | "gift" | "system_instruction";
 type ChatTextInputHandle = {
     appendText: (text: string, options?: { focus?: boolean }) => void;
     clear: () => void;
@@ -781,6 +784,7 @@ const ChatTextInputBar = memo(forwardRef<ChatTextInputHandle, {
         { icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--c-text)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="5" width="20" height="14" rx="2" /><line x1="2" y1="10" x2="22" y2="10" /></svg>, label: "红包", onClick: () => onOpenRichModal("red_packet") },
         { icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--c-text)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><text x="12" y="16" textAnchor="middle" fontSize="12" fill="var(--c-text)" stroke="none">¥</text></svg>, label: "转账", onClick: () => onOpenRichModal(isGroup ? "transfer_target" : "transfer") },
         { icon: <Gift size={22} strokeWidth={1.5} color="var(--c-text)" />, label: "礼物", onClick: () => onOpenRichModal("gift") },
+        { icon: <Headphones size={22} strokeWidth={1.5} color="var(--c-text)" />, label: "一起听", onClick: () => onOpenRichModal("music") },
         { icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--c-text)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" /></svg>, label: "位置", onClick: () => onOpenRichModal("location") },
         { icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--c-text)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" /><path d="M19 10v2a7 7 0 0 1-14 0v-2" /><line x1="12" y1="19" x2="12" y2="22" /><line x1="8" y1="22" x2="16" y2="22" /></svg>, label: "语音条", onClick: () => onOpenRichModal("voice_msg") },
         ...customPlusActions.map(action => ({
@@ -4109,6 +4113,9 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
             quotePreview: quotingMessage.content.slice(0, 50),
             quoteRole: quotingMessage.role,
         } : undefined;
+        // 捕获"发这条时在听什么"。作为上下文属性挂在消息上，而不是塞进 mediaData：
+        // 它不参与渲染，只用来让历史正文带上用户明确引用的那句歌词。
+        const listeningContext = captureMusicListeningContext(new Date().toISOString(), quotingMessage?.listeningContext);
         setQuotingMessage(null);
 
         const commitSendText = (currentText: string) => {
@@ -4123,6 +4130,7 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                 content: currentText,
                 mediaType: diceOnly ? "dice" : isQuoting ? "quote" : undefined,
                 mediaData: diceOnly ? { diceFace } : isQuoting ? quoteData : undefined,
+                listeningContext,
             });
 
             setMessages(prev => [...prev, newMsg]);
@@ -6871,6 +6879,50 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
             )}
 
             {/* Rich Media Input Modals */}
+            {richModal === "music" && (
+                <ChatMusicPanel
+                    name={character?.name || "对方"}
+                    avatar={character?.avatar || undefined}
+                    isGroup={session.isGroup}
+                    busy={isGenerating}
+                    onClose={() => setRichModal(null)}
+                    onInvite={() => {
+                        // 与角色主动邀请对称：这里由用户发起，随后请角色回应。
+                        // 失败时要把刚建立的房间撤掉，否则会留下一个没人回应的悬空邀请。
+                        try {
+                            const invitation = inviteListeningRoom(session.id, session.contactId);
+                            const snapshot = getMusicControlBridge()?.getState();
+                            const track = snapshot?.identityId === invitation.identityId
+                                ? (snapshot.currentTrack ?? snapshot.selectedTrack)
+                                : null;
+                            pushChatMessage({
+                                sessionId: session.id,
+                                role: "user",
+                                content: "邀请你一起听歌。",
+                                mediaType: "listening_invite",
+                                mediaData: {
+                                    listeningInvite: {
+                                        roomId: invitation.id,
+                                        initiator: "user",
+                                        title: track?.title,
+                                        artist: track?.artist,
+                                        coverUrl: track?.coverUrl,
+                                    },
+                                },
+                            });
+                            setRichModal(null);
+                            setMessages(loadChatMessages(session.id));
+                            void triggerAIResponse();
+                        } catch (error) {
+                            // 撤销刚建立的房间，避免留下一个没人回应的悬空邀请。
+                            // 这里沿用本文件的错误处理惯例（console.warn）：ChatRoom 没有
+                            // 通知类 prop，为一条邀请失败提示引入新的 UI 机制不划算。
+                            leaveListeningRoom(session.id);
+                            console.warn("[ListenTogether] 邀请失败:", error);
+                        }
+                    }}
+                />
+            )}
             {richModal === "voice_msg" && (
                 <VoiceRecordModal
                     characterId={session.contactId}

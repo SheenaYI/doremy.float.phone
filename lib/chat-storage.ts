@@ -126,6 +126,7 @@ export type ChatMessage = {
         | "accept_red_packet" | "decline_red_packet" | "accept_transfer" | "decline_transfer"
         | "payment_request" | "accept_payment_request" | "decline_payment_request"
         | "music" | "music_share" | "music_notify" | "music_not_found"
+        | "listening_invite"
         | "xiaohongshu_note_share"
         | "gift"
         | "contact_card"
@@ -147,6 +148,14 @@ export type ChatMessage = {
      * 于是通话期间在聊天室发的消息、卡片也被一起折进去了（用户实报）。
      */
     origin?: "chat" | "reading_discuss" | "custom_app" | "custom_app_background" | "story_floating_phone" | "call";
+    /**
+     * 发这条消息时「正在听什么」的歌词上下文（一起听功能）。
+     *
+     * 顶层字段而非 mediaData 内层：它是消息的上下文属性，与卡片渲染无关 ——
+     * 有它就能让历史正文带上「用户明确引用了哪一句」。
+     * 类型取自 music-listening，避免在这里重复定义一份会漂移的结构。
+     */
+    listeningContext?: import("./music-listening").MusicListeningContext | null;
     mediaUrl?: string;
     mediaData?: {
         amount?: number;          // 红包/转账金额
@@ -212,6 +221,20 @@ export type ChatMessage = {
         adminTargetName?: string; // 群管理操作目标显示名
         adminMuteMinutes?: number;// 禁言时长（分钟）
         blacklistEvent?: "block" | "unblock"; // 仿真拉黑系统事件类型（私聊：用户拉黑/解除拉黑角色）
+        /**
+         * 一起听邀请卡片的数据。
+         * roomId 是与 lib/listen-together.ts 里房间状态关联的令牌 —— 卡片上的
+         * 接受/拒绝要凭它去校验，避免点了一条已经过期的邀请。
+         * response 记录用户的选择，用于把卡片渲染成已接受/已拒绝的终态。
+         */
+        listeningInvite?: {
+            roomId: string;
+            initiator: "user" | "character";
+            title?: string;
+            artist?: string;
+            coverUrl?: string;
+            response?: "accepted" | "declined";
+        };
         blacklistCharacterName?: string; // 拉黑事件发生时的角色名（用于事件详情与上下文）
         blacklistUserName?: string;      // 拉黑事件发生时的用户名（用于事件详情与上下文）
         musicTitle?: string;      // 音乐标题
