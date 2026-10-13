@@ -5082,78 +5082,8 @@
    若需要再收敛到 .mp-apple 作用域内。 */
 .listening-player-presence { position:relative; z-index:2; align-self:center; display:flex; align-items:center; gap:8px; border:0; background:none; color:var(--c-music-accent, var(--c-icon)); font:inherit; font-size:12px; min-height:40px; padding:4px 12px; max-width:90%; cursor:pointer; flex-shrink:0; }
 
-/* ── 胶囊浮窗的「一起听」形态 ─────────────────────────────────────
-   移植自 Yyk-Y2k/ai-virtual-phone-Y2Kversion 的 styles/music.css（AGPL-3.0）。
-   共听时浮窗切换形态：折叠态缩成圆形、展开态换布局、封面外挂双头像环绕，
-   展开时环绕隐藏、封面收成 48px。上游这些规则分多轮写成，这里按原顺序保留 ——
-   靠 CSS 级联让后者覆盖前者，与上游一致。未带入的两条上游媒体查询只作用于
-   .listening-ring-blush / -heartbeat，那是上游早期迭代的残留类名，本实现不使用。 */
-
-/* 折叠 / 展开与共听的形态与尺寸（含三条多行规则） */
-.music-float[data-together][data-expanded] { background:rgba(255,237,244,.78); border-color:rgba(255,255,255,.8); }
-.music-float[data-together]:not([data-expanded]) { width:60px; height:60px; }
-.music-float[data-together][data-expanded] { height:80px; width:min(336px,calc(100% - 16px)); }
-.music-float[data-together] .music-float-inner { position:relative; padding-left:7px; }
-.music-float[data-together][data-expanded] .music-float-cover-wrap { animation:none; }
-.music-float[data-together][data-expanded] .music-float-inner { padding-left:10px; gap:10px; }
-.music-float[data-together][data-expanded] .music-float-info { margin-left:2px; }
-.music-float[data-together]:not([data-expanded]) .music-float-inner { padding:0 24px; }
-.music-float[data-together] .music-float-cover-img { border-radius:50%; }
-.music-float[data-together][data-expanded] .music-float-inner { padding-left:20px;gap:10px; }
-.music-float[data-together][data-expanded] .music-float-info { margin-left:12px; }
-.music-float[data-together] .listening-planets { left:0;top:50%;margin-top:-44px;width:88px;height:88px; }
-.music-float[data-together][data-expanded] .listening-planets { left:4px; }
-.music-float[data-together][data-expanded] .music-float-inner { padding:0 40px 0 12px;gap:10px; }
-.music-float[data-together][data-expanded] .music-float-cover-wrap { width:48px;height:48px;border-radius:14px;background:transparent;box-shadow:none;animation:none; }
-.music-float[data-together][data-expanded] .music-float-vinyl-center { width:100%;height:100%;border-radius:inherit;clip-path:none; }
-.music-float[data-together][data-expanded] .music-float-cover-img { border-radius:inherit; }
-.music-float[data-together][data-expanded] .music-float-info { margin-left:0; }
-
-/* 折叠态：缩成 88px 圆形，去掉卡片底色（露出封面唱片） */
-.music-float[data-together]:not([data-expanded]) {
-  width:88px;height:88px;background:transparent;border:0;box-shadow:none;
-  backdrop-filter:none;-webkit-backdrop-filter:none;overflow:visible;
-}
-
-/* 共听时封面收成黑胶圆盘 */
-.music-float[data-together] .music-float-cover-wrap {
-  width:40px;height:40px;border-radius:50%;overflow:hidden;
-  background:repeating-radial-gradient(circle,#24252c 0 1px,#373840 2px,#17181d 3px);
-  box-shadow:inset 0 0 0 1px #ffffff25,0 2px 5px #0002;
-}
-.music-float[data-together] .music-float-vinyl-center {
-  width:34px;height:34px;border-radius:50%;clip-path:circle(50%);overflow:hidden;
-}
-
-/* 展开态精修：隐藏环绕、封面收成 48px、收起按钮定位 */
-.music-float[data-expanded],.music-float[data-together][data-expanded] { width:min(310px,calc(100% - 16px));border-radius:26px; }
-.music-float[data-expanded] .listening-planets { display:none; }
-.music-float[data-expanded] .music-float-inner,
-.music-float[data-together][data-expanded] .music-float-inner { padding:0 40px 0 12px;gap:10px; }
-.music-float[data-expanded] .music-float-cover-wrap,
-.music-float[data-together][data-expanded] .music-float-cover-wrap { width:48px;height:48px;border-radius:14px;background:transparent;box-shadow:none;animation:none; }
-.music-float[data-expanded] .music-float-vinyl-center,
-.music-float[data-together][data-expanded] .music-float-vinyl-center { width:100%;height:100%;border-radius:inherit;clip-path:none; }
-.music-float[data-expanded] .music-float-cover-img,
-.music-float[data-together][data-expanded] .music-float-cover-img { border-radius:inherit; }
-.music-float[data-expanded] .music-float-info,
-.music-float[data-together][data-expanded] .music-float-info { margin-left:0; }
-.music-float[data-expanded] .music-float-hide {
-  position:absolute;right:0;top:0;width:40px;height:40px;padding:0;
-  display:grid;place-items:center;font-size:18px;line-height:1;border-radius:50%;
-  background:transparent;opacity:.55;
-}
-.music-float[data-expanded],.music-float[data-together][data-expanded] { width:min(286px,calc(100% - 16px)); }
-.music-float[data-expanded] .music-float-hide { font-size:13px; }
-
-/* 共听状态行的溢出处理 */
 .music-float .music-float-artist { font-size: 11px; opacity: .65; }
 .music-float .music-float-artist,.music-float .music-float-together { text-overflow:clip; }
-
-/* 暗色模式：共听展开态的底色 */
-@media(prefers-color-scheme:dark) {
-    .music-float[data-together][data-expanded] { background:rgba(55,37,48,.8); border-color:#efbbd438; }
-}
 
 /* ── 歌词选句：操作条、片段标题与选中态 ────────────────────────────
    移植自 Yyk-Y2k/ai-virtual-phone-Y2Kversion 的 styles/music.css（AGPL-3.0）。

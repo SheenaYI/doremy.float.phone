@@ -175,8 +175,6 @@ export default function MusicFloat({ hidden }: { hidden?: boolean }) {
             className="music-float"
             {...(expanded ? { "data-expanded": "" } : {})}
             {...(dismissing ? { "data-dismissing": "" } : {})}
-            // 供样式识别共听状态：joined 时胶囊整体呈现一起听的形态
-            {...(presence.room ? { "data-together": presence.room.status } : {})}
             style={{ left: pos.x, top: pos.y }}
             onPointerDown={handlePointerDown}
             onPointerMove={handlePointerMove}

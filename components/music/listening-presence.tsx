@@ -40,6 +40,18 @@ export function useListeningPresence() {
     const session = room ? loadChatSessions().find(s => s.id === room.sessionId) : null;
     const user = resolveUserIdentity();
 
+    // 开发模式诊断：头像/名字取不到时很难从界面上判断是"数据为空"还是"样式没生效"。
+    // 生产构建会被 NODE_ENV 守卫剔除。
+    if (process.env.NODE_ENV !== "production" && room) {
+        console.log("[一起听·存在感]", {
+            roomId: room.id, status: room.status,
+            characterId: room.characterId, 找到角色: !!character,
+            角色名: character?.name, 角色头像: character?.avatar,
+            会话别名: session?.alias,
+            用户名: user?.name, 用户头像: user?.avatarUrl,
+        });
+    }
+
     return {
         // 被婉拒的房间不再展示存在感：那不是"在一起听"
         room: room?.status === "declined" ? null : room,
