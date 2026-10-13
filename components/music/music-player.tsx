@@ -17,6 +17,7 @@ import {
 import MusicCommentsPage from "./music-comments";
 import MusicArtistPage from "./music-artist";
 import { ListeningPlayerPresence } from "./listening-presence";
+import { MusicMarquee } from "@/components/widgets/music-marquee";
 import { loadMusicBg, playerBgStyle, MUSIC_BG_EVENT, type MusicBgConfig } from "@/lib/music-bg";
 import { createMusicListeningContext, lyricTimestamp, type MusicListeningContext, type TimedLyric } from "@/lib/music-listening";
 import { LyricShareCard } from "./lyric-share-card";
@@ -532,7 +533,7 @@ export default function MusicPlayer() {
                     </svg>
                 </button>
                 <div className="mp-titles">
-                    <div className="mp-song" {...(view === "lyrics" ? { "data-glow": "" } : {})}>{track.title}</div>
+                    <div className="mp-song" {...(view === "lyrics" ? { "data-glow": "" } : {})}><MusicMarquee text={track.title} /></div>
                     <button className="mp-artist" onClick={openArtistPage}>
                         {track.artist || "未知歌手"}
                         <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="m9 5 7 7-7 7" /></svg>

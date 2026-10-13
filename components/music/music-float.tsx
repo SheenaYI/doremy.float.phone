@@ -4,6 +4,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useMusicControlsOptional } from "@/lib/music-context";
 import { useListeningPresence, ListeningPlanets } from "./listening-presence";
+import { MusicMarquee } from "@/components/widgets/music-marquee";
 
 const DRAG_START_THRESHOLD = 6;
 const SWIPE_DISMISS_EDGE_X = 4;
@@ -203,7 +204,7 @@ export default function MusicFloat({ hidden }: { hidden?: boolean }) {
 
                 {/* Track Info */}
                 <div className="music-float-info">
-                    <div className="music-float-title">{track.title}</div>
+                    <div className="music-float-title"><MusicMarquee text={track.title} /></div>
                     <div className="music-float-artist">{track.artist}</div>
                     {/* 共听状态行：有房间时显示"正在和谁一起听"，让状态在桌面上可见 */}
                     {presence.room && (
