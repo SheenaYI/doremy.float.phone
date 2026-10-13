@@ -20,7 +20,8 @@
     "check:listen": "node scripts/check-listening-capture-contract.cjs",
     "check:invite": "node scripts/check-listening-invite-card.cjs",
     "check:queue": "node scripts/check-listening-queue.cjs",
-    "check:music": "node scripts/check-music-classes.cjs"
+    "check:music": "node scripts/check-music-classes.cjs",
+    "check:listen-css": "node scripts/check-listening-selector-coverage.cjs"
   },
   "dependencies": {
     "@gltf-transform/functions": "^4.4.1",

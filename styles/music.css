@@ -5175,3 +5175,61 @@
    .listening-members .listening-end（复合选择器），逐行提取时被漏掉，
    按钮因此一直没有样式。 */
 .listening-members .listening-end { width:100%; border-radius:15px; background:#fa2d5512; color:#fa2d55; margin-top:14px; font-size:14px; }
+
+/* 播放器入口与成员面板里两两头像的圆形容器尺寸。上游 5400-5401 两条规则
+   在逐行提取时整条丢失（`>` 选择器被过滤跳过），于是 span 没有尺寸、
+   内部 img 的 width:100% 变成原始尺寸，整个头像铺满屏幕。补回。 */
+.listening-avatar-pair>span { width:26px; height:26px; border-radius:50%; overflow:hidden; background:#f4d4e2; border:2px solid #ffffffb0; display:grid; place-items:center; font-size:11px; color:#833d58; }
+.listening-avatar-pair>span+span { margin-left:-5px; }
+
+/* ── 一起听：后代 / 子选择器规则（补齐）───────────────────────────
+   这些规则的选择器写成 ".listening-avatar-pair>span"、".listening-members header"
+   ".listening-planets .listening-planet" 等形式。此前从上游逐行挑选样式时只认
+   "行首以 .listening- 开头"的行，这类后代/子选择器被整条丢掉，后果是：
+     - 头像 span 没有尺寸 → 内部 img 的 width:100% 变成原始尺寸，头像铺满屏幕；
+     - 环绕头像没有 20×20 / top:34px 的定位 → 与封面错位；
+     - 成员面板的 header 与按钮没有布局 → 面板排版异常。
+   本次改为按规则整条取回（花括号配对），不再逐行筛。 */
+
+/* 两端头像的圆形容器：尺寸、圆形裁剪与重叠错位 */
+.listening-avatar-pair>span { width:26px; height:26px; border-radius:50%; overflow:hidden; background:#f4d4e2; border:2px solid #ffffffb0; display:grid; place-items:center; font-size:11px; color:#833d58; }
+.listening-avatar-pair>span+span { margin-left:-5px; }
+
+/* 环绕轨道上的头像：覆盖尺寸与位置，并让角色头像保持正立 */
+.listening-planets .listening-planet { width:20px;height:20px;right:0;top:34px;border-width:1px;font-size:10px;box-shadow:0 1px 3px #0002; }
+.listening-orbit-char .listening-planet { animation-name:listening-upright-two; }
+
+/* 成员面板：标题行、按钮与状态小字 */
+.listening-members header { display:flex; align-items:center; justify-content:space-between; }
+.listening-members button { min-height:44px; border:0; background:none; color:inherit; cursor:pointer; font:inherit; }
+.listening-members header button { width:44px; display:grid; place-items:center; }
+.listening-member small { display:block; color:var(--c-music-accent); font-size:12px; margin-top:4px; }
+
+/* 装饰星与紧凑封套 */
+.listening-meeting-star { position:absolute; left:-1px; top:9px; color:#ff6e9b; text-shadow:0 0 2px #fff,0 0 7px #fff,0 0 12px #ff81ad; font-size:25px; line-height:1; z-index:4; opacity:0; animation:listening-meeting 24s linear infinite; }
+.listening-meeting-star i { position:absolute; left:17px; top:-6px; font-size:15px; color:#fff; font-style:normal; }
+.listening-invite-bare .listening-record-stage { height:146px;margin:3px 0; }
+
+/* 暗色模式下共听状态行的颜色（上游在媒体查询内，此前同样被漏掉） */
+@media(prefers-color-scheme:dark) {
+    .music-float-together { color:#efadc9; }
+}
+
+/* 减少动效：停止环绕动画并让头像复位 */
+@media(prefers-reduced-motion:reduce) {
+    .listening-planets * { animation:none !important; }
+    .listening-orbit-char { transform:rotate(180deg); }
+    .listening-orbit-char .listening-planet { transform:rotate(-180deg); }
+    .listening-meeting-star { display:none; }
+}
+
+/* 暂停播放时让环绕停转并复位（组件按 playing 写 data-orbiting 属性）。
+   少了这组规则，音乐会停但环绕照转，看起来像还在放。 */
+.listening-planets[data-orbiting="false"] * { animation-play-state:paused; }
+.listening-planets[data-orbiting="false"] .listening-meeting-star { visibility:hidden; }
+/* 上游还有两条针对 .listening-ring-blush / -heartbeat 的规则，
+   那两个类在本实现里不存在（上游早期迭代残留），未移植。 */
+/* 暂停时让环形与频谱复位/隐藏 */
+.listening-planets[data-orbiting="false"] .listening-ring-base { animation:none;opacity:1; }
+.listening-planets[data-orbiting="false"] .listening-wave-window { visibility:hidden; }
+/* 另有一条针对 .listening-ring-blush / -heartbeat，那两个类本实现不存在，未移植 */
