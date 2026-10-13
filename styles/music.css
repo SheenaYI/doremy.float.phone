@@ -5023,3 +5023,8 @@
 .listening-invite-gesture-hint { color:var(--c-text-muted,#a47f91);font-size:10px;line-height:1.5;text-align:center;padding:4px 0 0;max-width:214px; }
 .listening-record-stage[role="button"]:focus-visible { outline:2px solid #df8baa;outline-offset:4px;border-radius:8px; }
 .listening-invite-record[data-status="accepted"] .listening-record-slide { transform:translateX(70px); }
+
+/* 一起听邀请卡是一张独立卡片，不是聊天气泡：把外层气泡的底、内边距、
+   阴影与边框全部清掉，让卡片自己成形（与上游同款做法）。
+   依赖 chat-room 气泡外层写入的 data-media-type 属性。 */
+.chat-room-wrapper [data-media-type="listening_invite"] { background:transparent!important;padding:0!important;box-shadow:none!important;border:0!important; }

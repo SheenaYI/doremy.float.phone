@@ -225,3 +225,36 @@ export async function respondToListeningInvitation(id: string, sessionId: string
         resolving.delete(id);
     }
 }
+
+/**
+ * 开发模式专用：伪造一条「角色发来的一起听邀请」，用于目测邀请卡片的视觉与手势。
+ *
+ * 存在的理由：这张卡片只在角色主动邀请时出现，而是否邀请取决于模型判断，
+ * 无法稳定复现 —— 没有这个钩子，卡片的外观与滑动手势就只能靠运气触发才能检查。
+ *
+ * 生产构建里不会注册：用 process.env.NODE_ENV 守卫，Next 会在构建期把这段判死并
+ * 剔除，因此线上既没有这个函数，也没有它的体积。
+ */
+if (process.env.NODE_ENV !== "production" && typeof window !== "undefined") {
+    (window as unknown as Record<string, unknown>).__dshFakeListeningInvite = (sessionId: string, characterId: string, title?: string, artist?: string) => {
+        const invitation = inviteListeningRoom(sessionId, characterId);
+        const message = pushChatMessage({
+            sessionId,
+            role: "assistant",
+            content: `邀请你一起听歌。${title ? ` 歌曲：${title}${artist ? " · " + artist : ""}` : ""}`,
+            mediaType: "listening_invite",
+            mediaData: {
+                listeningInvite: {
+                    roomId: invitation.id,
+                    initiator: "character",
+                    title,
+                    artist,
+                },
+            },
+        });
+        room = { ...invitation, initiator: "character", invitationMessageId: message.id, song: { title, artist } };
+        emit();
+        window.dispatchEvent(new CustomEvent("chat-messages-updated", { detail: { sessionId } }));
+        return { roomId: invitation.id, messageId: message.id };
+    };
+}

@@ -58,7 +58,7 @@ import { setDebugChatState } from "@/lib/debug-store";
 import { SessionCustomCSS } from "@/components/ui/session-custom-css";
 import { setChatActive } from "@/lib/music-action-queue";
 import { getMusicControlBridge } from "@/lib/music-control-bridge";
-import { inviteListeningRoom, leaveListeningRoom } from "@/lib/listen-together";
+import { inviteListeningRoom, leaveListeningRoom, applyListeningRoomReply } from "@/lib/listen-together";
 import { captureMusicListeningContext } from "@/lib/music-listening-capture";
 import { ChatMusicPanel } from "@/components/music/chat-music-panel";
 import { findPlayableMatch, getNeteaseLyrics, getNeteaseSongDetail } from "@/lib/music-service";
@@ -2914,12 +2914,19 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
     ): Promise<{ hasVisible: boolean; stateValues: StateValue[]; triggerCall?: "voice" | "video"; hasDecline?: boolean }> => {
         throwIfGenerationStopped(options);
         const responseBatchId = options?.responseBatchId || createResponseBatchId();
-        const rawResponseText = options?.rawResponseText ?? aiResponseText;
+        // 一起听协议标记必须先摘掉再解析。私聊主路径走的就是这里 —— 此前只把
+        // applyListeningRoomReply 接在了 follow-up-service 的 parseAndSaveResponse
+        // （后台生成与推送链路）上，导致角色在这条主路径发出的 [一起听邀请:…] 与
+        // [一起听:…:接受] 会被当成正文渲染成气泡，用户直接看到方括号原文。
+        const cleanedResponseText = applyListeningRoomReply(aiResponseText, session.id);
+        const rawResponseText = options?.rawResponseText === undefined
+            ? cleanedResponseText
+            : applyListeningRoomReply(options.rawResponseText, session.id);
         const previousState = session.isGroup
             ? getLatestStateValues(session.id)
             : getLatestCharacterStateValues(session.contactId);
 
-        const { parts: rawParts, stateValues, freshStateValues, statusPanel, innerMonologue, characterRemarkForUser } = parseAIResponse(aiResponseText, previousState);
+        const { parts: rawParts, stateValues, freshStateValues, statusPanel, innerMonologue, characterRemarkForUser } = parseAIResponse(cleanedResponseText, previousState);
         if (!session.isGroup && characterRemarkForUser) {
             const normalizedRemark = characterRemarkForUser.replace(/[\r\n]/g, " ").trim().slice(0, 20);
             if (normalizedRemark) {
@@ -6488,6 +6495,9 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                                             style={isStandaloneHtmlPreview ? STANDALONE_CARD_BUBBLE_STYLE : undefined}
                                             data-ui={msg.role === "user" ? "bubble-user" : "bubble-bot"}
                                             data-msg-id={msg.id}
+                                            // 供样式按消息类型脱壳：一起听邀请卡是一张独立卡片，
+                                            // 不该套着聊天气泡的底/边框（见 styles/music.css 的对应规则）。
+                                            data-media-type={renderMsg.mediaType || "text"}
                                             {...(activeMessageId === msg.id ? { "data-active": "" } : {})}
                                             >
                                             {/* Message Actions Popup */}

@@ -61,7 +61,31 @@ assert.ok(tsx.includes("touchAction"), "缺少 touch-action 处理（否则横�
 // 6) 退出入口不能被移除：双向流程的"中途退出"依赖它。
 assert.ok(tsx.includes("exitListeningRoom"), "卡片缺少退出入口");
 
+// 7) 独立卡片：邀请卡不该套着聊天气泡的底/边框。
+//    这条链路跨两个文件，最容易在改动中静默断掉 —— 卡片会照常渲染，
+//    只是外面多了一层气泡壳，而那种"看着有点不对"很难在评审里说清。
+//    上游的做法是：chat-room 的气泡外层写 data-media-type，music.css 据此脱壳。
+const chatRoom = fs.readFileSync("components/chat/chat-room.tsx", "utf8");
+assert.ok(
+    /data-media-type=\{renderMsg\.mediaType \|\| "text"\}|data-media-type=\{msg\.mediaType/.test(chatRoom),
+    "chat-room 的气泡外层缺少 data-media-type 属性（脱壳规则会失效）",
+);
+assert.ok(
+    css.includes('[data-media-type="listening_invite"]'),
+    "music.css 缺少邀请卡的脱壳规则",
+);
+assert.ok(
+    /\.chat-room-wrapper \[data-media-type="listening_invite"\]\s*\{[^}]*background:transparent/.test(css),
+    "脱壳规则必须清掉气泡背景（并在 .chat-room-wrapper 作用域内）",
+);
+// 卡片的落库 mediaType 必须与脱壳规则里的取值一致，否则规则匹配不到。
+assert.ok(
+    tsx.includes('mediaType: "listening_invite"') || chatRoom.includes('mediaType: "listening_invite"'),
+    "落库的 mediaType 与脱壳规则不一致",
+);
+
 console.log(
     `PASS: 邀请卡一致性 —— ${used.size} 个类名均有样式、data-status 选择器齐全、` +
-    `唱片关键帧已引用、滑动常量与 CSS 对得上、键盘等价操作与退出入口均在。`,
+    `唱片关键帧已引用、滑动常量与 CSS 对得上、键盘等价操作与退出入口均在、` +
+    `独立卡片脱壳链路完整。`,
 );
