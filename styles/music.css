@@ -5028,3 +5028,129 @@
    阴影与边框全部清掉，让卡片自己成形（与上游同款做法）。
    依赖 chat-room 气泡外层写入的 data-media-type 属性。 */
 .chat-room-wrapper [data-media-type="listening_invite"] { background:transparent!important;padding:0!important;box-shadow:none!important;border:0!important; }
+
+/* ── 一起听：存在感浮窗、成员面板与环形频谱 ───────────────────────
+   移植自 Yyk-Y2k/ai-virtual-phone-Y2Kversion 的 styles/music.css（AGPL-3.0，
+   署名见 README 第六节）。按选择器逐个挑选，未整段复制：上游该区间夹着大量
+   music-float / music-app 规则，本仓库已有自己的版本，不能被覆盖。 */
+.listening-planets { position:absolute; left:3px; top:50%; margin-top:-26px; width:52px; height:52px; pointer-events:none; z-index:3; }
+.listening-orbit { position:absolute; inset:0; animation:listening-orbit-one 24s linear infinite; }
+.listening-orbit-char { animation-name:listening-orbit-two; }
+.listening-planet { position:absolute; right:0; top:17px; width:18px; height:18px; border-radius:50%; background:#f8d7e5; border:1.5px solid #fff; overflow:hidden; box-shadow:0 2px 6px #90335320; display:grid; place-items:center; font-size:10px; color:#833d58; animation:listening-upright-one 24s linear infinite; }
+.listening-meeting-star { position:absolute; left:-1px; top:9px; color:#ff6e9b; text-shadow:0 0 2px #fff,0 0 7px #fff,0 0 12px #ff81ad; font-size:25px; line-height:1; z-index:4; opacity:0; animation:listening-meeting 24s linear infinite; }
+@keyframes listening-orbit-one { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
+@keyframes listening-orbit-two { from{transform:rotate(180deg)} to{transform:rotate(900deg)} }
+@keyframes listening-upright-one { from{transform:rotate(0deg)} to{transform:rotate(-360deg)} }
+@keyframes listening-upright-two { from{transform:rotate(-180deg)} to{transform:rotate(-900deg)} }
+@keyframes listening-meeting { 0%,46%,59%,100%{opacity:0;transform:scale(.65) rotate(-12deg)} 49%,52%{opacity:1;transform:scale(1.15) rotate(0deg)} 55%{opacity:.9;transform:scale(.95) rotate(10deg)} }
+.listening-avatar-pair { display:flex; padding-right:2px; flex-shrink:0; }
+.listening-members-overlay { position:absolute; inset:0; z-index:80; background:#0003; display:flex; align-items:flex-end; padding:16px; backdrop-filter:blur(8px); }
+.listening-members { width:100%; padding:20px; border-radius:28px; background:var(--mp-sheet); border:1px solid #ffffff40; color:var(--c-music-text); box-shadow:0 16px 50px #0002; }
+.listening-member { display:flex; align-items:center; gap:12px; padding:12px 0; font-size:15px; }
+.listening-member-avatar { width:42px; height:42px; border-radius:50%; overflow:hidden; background:#f5d4e2; display:grid; place-items:center; color:#833d58; }
+.listening-ring { position:absolute;inset:0;width:88px;height:88px;overflow:visible; }
+.listening-ring-base { stroke:rgba(121,126,140,.42);stroke-width:.7; }
+.listening-wave-window { opacity:0;animation:listening-ring-meeting 24s linear infinite; }
+@keyframes listening-ring-meeting { 0%,46%,72%,100%{opacity:0} 49%,67%{opacity:1} }
+@keyframes listening-ring-recede { 0%,46%,72%,100%{opacity:1} 49%,67%{opacity:0} }
+.listening-spectrum-bar { stroke:#ed89a8;stroke-width:1.15;stroke-linecap:round;transform-box:view-box;transform-origin:0 0;animation:listening-spectrum-breathe var(--spectrum-duration,1.2s) ease-in-out var(--spectrum-delay,0s) infinite; }
+@keyframes listening-spectrum-breathe {
+  0%,100% { transform:scaleY(.25); } 20% { transform:scaleY(.82); }
+  38% { transform:scaleY(.42); } 58% { transform:scaleY(1); } 78% { transform:scaleY(.35); }
+}
+/* 暗色与减少动效下的覆盖。放在基础规则之后，否则覆盖不生效。 */
+@media(prefers-reduced-motion:reduce) { .listening-wave-window { display:none; } }
+@media(prefers-color-scheme:dark) { .listening-spectrum-bar { stroke:#f3a4c0; } }
+@media(prefers-color-scheme:dark) {
+  .listening-invite-card { background:linear-gradient(135deg,#342a32eb,#272730eb);border-color:#ffffff16;color:#eee5eb;box-shadow:0 5px 20px #0002; }
+  .listening-invite-heading,.listening-invite-footer [role="status"] { color:#dfa8bf; }
+  .listening-invite-copy { color:#bcb0bc; }.listening-invite-copy strong { color:#f4eaf1; }
+  .listening-invite-cover { background:#4c3745;color:#e8bdcf; }.listening-invite-footer { border-color:#ffffff12;color:#b7a5b1; }
+}
+@media(prefers-color-scheme:dark) {
+  .listening-record-disc { filter:brightness(.82) saturate(.8); }
+  .listening-record-sleeve { background:#614455;box-shadow:1px 3px 8px #0003; }
+  .listening-record-empty { background:linear-gradient(145deg,#654652,#3e303c);color:#e4bdcd; }
+}
+@media(prefers-reduced-motion:reduce) {
+  .listening-record-slide { transition:none; }
+  .listening-record-disc { animation:none; }
+}
+
+/* 一起听在播放器里的入口按钮。上游写作 .mp-apple .listening-player-presence，
+   依赖尚未移植的 Apple Music 外壳；这里做成不依赖外壳前缀，等阶段 5 换外壳时
+   若需要再收敛到 .mp-apple 作用域内。 */
+.listening-player-presence { position:relative; z-index:2; align-self:center; display:flex; align-items:center; gap:8px; border:0; background:none; color:var(--c-music-accent, var(--c-icon)); font:inherit; font-size:12px; min-height:40px; padding:4px 12px; max-width:90%; cursor:pointer; flex-shrink:0; }
+
+/* ── 胶囊浮窗的「一起听」形态 ─────────────────────────────────────
+   移植自 Yyk-Y2k/ai-virtual-phone-Y2Kversion 的 styles/music.css（AGPL-3.0）。
+   共听时浮窗切换形态：折叠态缩成圆形、展开态换布局、封面外挂双头像环绕，
+   展开时环绕隐藏、封面收成 48px。上游这些规则分多轮写成，这里按原顺序保留 ——
+   靠 CSS 级联让后者覆盖前者，与上游一致。未带入的两条上游媒体查询只作用于
+   .listening-ring-blush / -heartbeat，那是上游早期迭代的残留类名，本实现不使用。 */
+
+/* 折叠 / 展开与共听的形态与尺寸（含三条多行规则） */
+.music-float[data-together][data-expanded] { background:rgba(255,237,244,.78); border-color:rgba(255,255,255,.8); }
+.music-float[data-together]:not([data-expanded]) { width:60px; height:60px; }
+.music-float[data-together][data-expanded] { height:80px; width:min(336px,calc(100% - 16px)); }
+.music-float[data-together] .music-float-inner { position:relative; padding-left:7px; }
+.music-float[data-together][data-expanded] .music-float-cover-wrap { animation:none; }
+.music-float[data-together][data-expanded] .music-float-inner { padding-left:10px; gap:10px; }
+.music-float[data-together][data-expanded] .music-float-info { margin-left:2px; }
+.music-float[data-together]:not([data-expanded]) .music-float-inner { padding:0 24px; }
+.music-float[data-together] .music-float-cover-img { border-radius:50%; }
+.music-float[data-together][data-expanded] .music-float-inner { padding-left:20px;gap:10px; }
+.music-float[data-together][data-expanded] .music-float-info { margin-left:12px; }
+.music-float[data-together] .listening-planets { left:0;top:50%;margin-top:-44px;width:88px;height:88px; }
+.music-float[data-together][data-expanded] .listening-planets { left:4px; }
+.music-float[data-together][data-expanded] .music-float-inner { padding:0 40px 0 12px;gap:10px; }
+.music-float[data-together][data-expanded] .music-float-cover-wrap { width:48px;height:48px;border-radius:14px;background:transparent;box-shadow:none;animation:none; }
+.music-float[data-together][data-expanded] .music-float-vinyl-center { width:100%;height:100%;border-radius:inherit;clip-path:none; }
+.music-float[data-together][data-expanded] .music-float-cover-img { border-radius:inherit; }
+.music-float[data-together][data-expanded] .music-float-info { margin-left:0; }
+
+/* 折叠态：缩成 88px 圆形，去掉卡片底色（露出封面唱片） */
+.music-float[data-together]:not([data-expanded]) {
+  width:88px;height:88px;background:transparent;border:0;box-shadow:none;
+  backdrop-filter:none;-webkit-backdrop-filter:none;overflow:visible;
+}
+
+/* 共听时封面收成黑胶圆盘 */
+.music-float[data-together] .music-float-cover-wrap {
+  width:40px;height:40px;border-radius:50%;overflow:hidden;
+  background:repeating-radial-gradient(circle,#24252c 0 1px,#373840 2px,#17181d 3px);
+  box-shadow:inset 0 0 0 1px #ffffff25,0 2px 5px #0002;
+}
+.music-float[data-together] .music-float-vinyl-center {
+  width:34px;height:34px;border-radius:50%;clip-path:circle(50%);overflow:hidden;
+}
+
+/* 展开态精修：隐藏环绕、封面收成 48px、收起按钮定位 */
+.music-float[data-expanded],.music-float[data-together][data-expanded] { width:min(310px,calc(100% - 16px));border-radius:26px; }
+.music-float[data-expanded] .listening-planets { display:none; }
+.music-float[data-expanded] .music-float-inner,
+.music-float[data-together][data-expanded] .music-float-inner { padding:0 40px 0 12px;gap:10px; }
+.music-float[data-expanded] .music-float-cover-wrap,
+.music-float[data-together][data-expanded] .music-float-cover-wrap { width:48px;height:48px;border-radius:14px;background:transparent;box-shadow:none;animation:none; }
+.music-float[data-expanded] .music-float-vinyl-center,
+.music-float[data-together][data-expanded] .music-float-vinyl-center { width:100%;height:100%;border-radius:inherit;clip-path:none; }
+.music-float[data-expanded] .music-float-cover-img,
+.music-float[data-together][data-expanded] .music-float-cover-img { border-radius:inherit; }
+.music-float[data-expanded] .music-float-info,
+.music-float[data-together][data-expanded] .music-float-info { margin-left:0; }
+.music-float[data-expanded] .music-float-hide {
+  position:absolute;right:0;top:0;width:40px;height:40px;padding:0;
+  display:grid;place-items:center;font-size:18px;line-height:1;border-radius:50%;
+  background:transparent;opacity:.55;
+}
+.music-float[data-expanded],.music-float[data-together][data-expanded] { width:min(286px,calc(100% - 16px)); }
+.music-float[data-expanded] .music-float-hide { font-size:13px; }
+
+/* 共听状态行的溢出处理 */
+.music-float .music-float-artist { font-size: 11px; opacity: .65; }
+.music-float .music-float-artist,.music-float .music-float-together { text-overflow:clip; }
+
+/* 暗色模式：共听展开态的底色 */
+@media(prefers-color-scheme:dark) {
+    .music-float[data-together][data-expanded] { background:rgba(55,37,48,.8); border-color:#efbbd438; }
+}

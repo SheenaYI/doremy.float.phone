@@ -3,6 +3,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useMusicControlsOptional } from "@/lib/music-context";
+import { useListeningPresence, ListeningPlanets } from "./listening-presence";
 
 const DRAG_START_THRESHOLD = 6;
 const SWIPE_DISMISS_EDGE_X = 4;
@@ -38,6 +39,8 @@ export default function MusicFloat({ hidden }: { hidden?: boolean }) {
     const dismissTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const [expanded, setExpanded] = useState(false);
     const [dismissing, setDismissing] = useState(false);
+    // 一起听状态：浮窗要显示"正在和谁一起听"，并在封面上挂双头像环绕
+    const presence = useListeningPresence();
 
     const clampPos = useCallback((x: number, y: number) => {
         const el = floatRef.current;
@@ -172,6 +175,8 @@ export default function MusicFloat({ hidden }: { hidden?: boolean }) {
             className="music-float"
             {...(expanded ? { "data-expanded": "" } : {})}
             {...(dismissing ? { "data-dismissing": "" } : {})}
+            // 供样式识别共听状态：joined 时胶囊整体呈现一起听的形态
+            {...(presence.room ? { "data-together": presence.room.status } : {})}
             style={{ left: pos.x, top: pos.y }}
             onPointerDown={handlePointerDown}
             onPointerMove={handlePointerMove}
@@ -194,12 +199,20 @@ export default function MusicFloat({ hidden }: { hidden?: boolean }) {
                             </div>
                         )}
                     </div>
+                    {/* 共听时封面上的双头像环绕（内部分辨率与状态，非共听时不渲染） */}
+                    <ListeningPlanets presence={presence} playing={player.isPlaying} />
                 </div>
 
                 {/* Track Info */}
                 <div className="music-float-info">
                     <div className="music-float-title">{track.title}</div>
                     <div className="music-float-artist">{track.artist}</div>
+                    {/* 共听状态行：有房间时显示"正在和谁一起听"，让状态在桌面上可见 */}
+                    {presence.room && (
+                        <div className="music-float-together">
+                            {presence.room.status === "invited" ? `等待${presence.name}加入` : `正在和${presence.name}一起听`}
+                        </div>
+                    )}
                 </div>
 
                 {/* Compact Controls */}

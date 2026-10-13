@@ -8,6 +8,7 @@ import { findPlayableMatch, getNeteaseLyrics, getNeteasePlayUrl, getNeteasePlayI
 import { kvGet, kvSet, registerKvMigration } from "./kv-db";
 import { registerMusicControlBridge } from "./music-control-bridge";
 import { LOCAL_IDENTITY_ID } from "./local-identity";
+import { getListeningRoom } from "./listen-together";
 
 // ── Types ──
 
@@ -165,6 +166,11 @@ export function MusicProvider({ children }: { children: ReactNode }) {
                     const nextIdx = idx + 1;
                     if (nextIdx < q.length) {
                         nextTrack = q[nextIdx];
+                    } else if (getListeningRoom()?.status === "joined") {
+                        // 一起听中：队列放完就回绕到队首。
+                        // 否则音乐一停，共听状态就名存实亡 —— 双方还"在一起听"，
+                        // 却没有歌在放。单独听时不回绕，保持原有的"放完即停"。
+                        nextTrack = q[0];
                     }
                 }
 
