@@ -20,6 +20,62 @@ import { useMusicPlayerOptional } from "@/lib/music-context";
 const serverSnapshot = () => null;
 
 /**
+ * 开发模式专用：把每个一起听相关元素的实际尺寸打印出来。
+ *
+ * 存在的理由：头像/环绕曾多次出现"铺满整屏"的问题，而这类问题靠读样式表推不出来
+ * —— 究竟是容器没尺寸、图片没约束、还是某个祖先没被裁剪，只有实测才知道。
+ * 在生产构建里由 NODE_ENV 守卫剔除。
+ */
+function useListeningSizeAudit(roomId?: string) {
+    useEffect(() => {
+        if (process.env.NODE_ENV === "production") return;
+        // 暴露成全局函数，便于直接在控制台敲一行核对 —— 不用粘贴一段代码。
+        // 需要区分「元素不存在」与「元素存在但被 display:none 隐藏」：
+        // 这两者的成因完全不同（前者是条件渲染没走到，后者是样式把它藏了）。
+        (window as unknown as Record<string, unknown>).__dshListeningAudit = () => {
+            const selectors = [
+                ".listening-planets", ".listening-orbit", ".listening-planet",
+                ".listening-avatar-pair", ".listening-avatar-pair > span",
+                ".listening-member-avatar", ".listening-members", ".listening-members-overlay",
+                ".music-float", ".music-float-cover-wrap", ".music-float-info",
+            ];
+            const room = getListeningRoom();
+            const rows = selectors.map(selector => {
+                const el = document.querySelector(selector);
+                if (!el) return `${selector.padEnd(32)} 元素不存在（条件渲染没走到）`;
+                const rect = el.getBoundingClientRect();
+                const style = getComputedStyle(el);
+                const hidden = style.display === "none";
+                return `${selector.padEnd(32)} ${Math.round(rect.width)}×${Math.round(rect.height)}` +
+                    ` display=${style.display}${hidden ? " ← 被隐藏" : ""} pos=${style.position} overflow=${style.overflow}`;
+            });
+            const images = [...document.querySelectorAll<HTMLImageElement>(
+                ".listening-planet img,.listening-avatar-pair img,.listening-member-avatar img")].map((img, index) => {
+                    const rect = img.getBoundingClientRect();
+                    const style = getComputedStyle(img);
+                    return `  img[${index}] 实测 ${Math.round(rect.width)}×${Math.round(rect.height)}` +
+                        ` css=${style.width}×${style.height} 原图=${img.naturalWidth}×${img.naturalHeight}`;
+                });
+            console.log(`[一起听·尺寸] room=${room ? `${room.id} status=${room.status}` : "空！存在感不会渲染"}`);
+            console.log(rows.join("\n"));
+            console.log("头像 img：\n" + (images.join("\n") || "  无"));
+            // 环绕与封面的相对位置：定环绕坐标只能靠实测，靠读样式推不出来
+            const float = document.querySelector(".music-float");
+            const cover = document.querySelector(".music-float-cover-wrap");
+            if (float && cover) {
+                const f = float.getBoundingClientRect();
+                const c = cover.getBoundingClientRect();
+                console.log("[一起听·相对位置] 以浮窗左上为原点：",
+                    `浮窗 ${Math.round(f.width)}×${Math.round(f.height)}`,
+                    `封面 x=${Math.round(c.left - f.left)} y=${Math.round(c.top - f.top)} ${Math.round(c.width)}×${Math.round(c.height)}`,
+                    `封面中心 x=${Math.round(c.left - f.left + c.width / 2)} y=${Math.round(c.top - f.top + c.height / 2)}`);
+            }
+            return { room, rows, images };
+        };
+    }, [roomId]);
+}
+
+/**
  * 当前共听状态。
  *
  * 订阅房间变化与几个会影响展示的外部事件（角色/会话/绑定更新），
@@ -36,6 +92,7 @@ export function useListeningPresence() {
     }, []);
 
     const room = useSyncExternalStore(subscribeListeningRoom, getListeningRoom, serverSnapshot);
+    useListeningSizeAudit(room?.id);
     const character = room ? loadCharacters().find(c => c.id === room.characterId) : null;
     const session = room ? loadChatSessions().find(s => s.id === room.sessionId) : null;
     const user = resolveUserIdentity();
