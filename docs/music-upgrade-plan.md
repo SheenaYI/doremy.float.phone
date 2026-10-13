@@ -178,14 +178,43 @@ git push --force-with-lease origin main
 ## 六、本地开发提示
 
 - **`y2k` 克隆每个阶段都要用于对照，先别删**（用完再拉约一两分钟）。
-- 跑构建务必用独立产物目录，否则会覆盖正在运行的 dev 服务的 `.next`：
+- **跑构建前必须先停掉 dev 服务。** 这一条是实测纠正过的：
+  - 只设 `NEXT_DIST_DIR` 指向独立目录**并不够**。实测在 dev 运行时带独立目录跑构建，
+    dev 仍会坏掉（`SyntaxError: Unexpected end of JSON input`，读取构建写过的
+  manifest），页面随即 500。
+  - 正确顺序：先停 dev → 再构建 → 用完清理 `.next-verify` 并还原配置。
   ```bash
+  rm -rf .next-verify
   NEXT_DIST_DIR=.next-verify npx next build
-  ```
-  构建会改写 `next-env.d.ts` 与 `tsconfig.json`（把 `.next-verify` 写进去），
-  用完需还原：
-  ```bash
   git checkout HEAD -- next-env.d.ts tsconfig.json && rm -rf .next-verify
   ```
+  构建会把 `.next-verify` 写进 `next-env.d.ts` 与 `tsconfig.json`，用完必须还原，
+  否则留下指向不存在路径的引用。
+- **`.next` 被写坏后必须删掉再起 dev**，仅重启进程不够（残留的坏 manifest 会继续报错）。
 - 质量闸门：`tsc` 基数为 **35 个既有错误**，任何阶段都不应超过；
   `npm run check:lyric` / `check:listen` / `check:invite` 应全部通过。
+
+## 七、已知的跨文件耦合（改动时容易漏）
+
+这两处的共同点：**出错时页面看起来"只是有点不对"，不会报错**，因此都配了断言。
+
+1. **消息类型 → 样式脱壳**
+   邀请卡是一张独立卡片，不该套聊天气泡的壳。链路是两段：
+   `chat-room.tsx` 的气泡外层写 `data-media-type={renderMsg.mediaType || "text"}`，
+   `styles/music.css` 用 `.chat-room-wrapper [data-media-type="listening_invite"]` 清掉
+   气泡的底/内边距/阴影/边框。**两段缺一不可**，且属性值必须与落库的 `mediaType` 一致。
+   由 `check:invite` 守护。
+
+2. **协议标记 → 解析链路有两条**
+   `applyListeningRoomReply` 必须在**两条** AI 回复解析路径上都调用，只接一条会让标记
+   漏成可见正文：
+   - `components/chat/chat-room.tsx` 的 `splitAndSaveAIMessages` —— **私聊主路径**
+   - `lib/follow-up-service.ts` 的 `parseAndSaveResponse` —— 后台生成与推送链路
+   目前 `check:listen` 守护的是捕获契约；「标记不漏出」尚无自动断言，改动这两处后需人工确认。
+
+### 关于 `data-media-type` 的影响范围
+
+上游还有多处依赖该属性的样式规则，但它们全在 `styles/imessage26.css`（iMessage 主题）里，
+本仓库尚未移植，故当前对文字 / 音频 / 引用等其它消息类型**没有影响**。
+阶段 5 若移植该主题，必须把那些规则一并带入，否则气泡外观会被带偏。
+
