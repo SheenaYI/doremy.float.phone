@@ -2576,6 +2576,7 @@ html,body{margin:0;padding:0;width:100%;height:100%;background:#121110;color:rgb
    * （否则动态虽然发出去了，用户还停在聊天页、看不到结果）。
    */
   const handleMiniShareView = useCallback((destination: string) => {
+    if (process.env.NODE_ENV !== "production") console.log("[分享] 导航到目标:", destination);
     setShowMiniChat(false);
     setMiniSharePayload(null);
     musicOverlayControllerRef.current?.closeFullPlayer();
