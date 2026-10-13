@@ -201,7 +201,10 @@ function ListeningWaveRing() {
             <circle className="listening-ring-base" cx="44" cy="44" r="34" />
             <g className="listening-wave-window listening-spectrum">
                 {spectrumBars.map((bar, index) => (
-                    <g key={index} transform={`translate(44 44) rotate(${bar.rotation}) translate(0 -32)`}>
+                    // 半径用视框单位（88 的一半再留出线长），不用 px：
+                    // 环的容器在折叠/展开态是 80 / 72px，SVG 会按 viewBox 等比缩放，
+                    // 写死 px 会让短线落到环外，看起来"半径不对"。
+                    <g key={index} transform={`translate(44 44) rotate(${bar.rotation}) translate(0 -30)`}>
                         <line
                             className="listening-spectrum-bar"
                             x1="0" y1="0" x2="0" y2={-bar.length}

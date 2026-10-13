@@ -206,12 +206,9 @@ export default function MusicFloat({ hidden }: { hidden?: boolean }) {
                 <div className="music-float-info">
                     <div className="music-float-title"><MusicMarquee text={track.title} /></div>
                     <div className="music-float-artist">{track.artist}</div>
-                    {/* 共听状态行：有房间时显示"正在和谁一起听"，让状态在桌面上可见 */}
-                    {presence.room && (
-                        <div className="music-float-together">
-                            {presence.room.status === "invited" ? `等待${presence.name}加入` : `正在和${presence.name}一起听`}
-                        </div>
-                    )}
+                    {/* 这里原本有一行"正在和 X 一起听"。已移除：浮窗空间本就很窄，
+                        多这一行会把歌名挤成竖排（实测展开态信息区只有 40px 宽）；
+                        共听状态改由封面上的双头像环绕表达 —— 那是更直观的呈现。 */}
                 </div>
 
                 {/* Compact Controls */}
