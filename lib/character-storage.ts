@@ -30,6 +30,17 @@ export function generateWechatID(): string {
   return prefix + suffix;
 }
 
+/**
+ * 可互动的角色。
+ *
+ * 上游用身份空间判断"当前身份能否与该角色互动"并据此过滤。本仓库是单用户
+ * （见 lib/local-identity.ts），可互动恒为真，故等价于全部角色。
+ * 保留这个函数是为了让移植过来的调用点不必改动语义。
+ */
+export function loadInteractableCharacters(): Character[] {
+  return loadCharacters();
+}
+
 export function loadCharacters(): Character[] {
   if (_charsCache) return _charsCache;
   if (typeof window === "undefined") return [];

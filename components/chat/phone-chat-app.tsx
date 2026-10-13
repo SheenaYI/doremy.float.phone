@@ -187,13 +187,18 @@ export const PhoneChatApp = memo(function PhoneChatApp({ onClose, initialSession
                 pushChatMessage({
                     sessionId: sess.id,
                     role: "user",
-                    content: "",
+                    content: sharePayload.listeningContext?.reference?.text ?? "",
                     mediaType: "music_share",
                     mediaData: {
                         musicTitle: sharePayload.title,
                         musicArtist: sharePayload.artist,
+                        // 封面：歌词卡据此取色（背景与文字色取自封面）
+                        musicCoverUrl: sharePayload.coverUrl,
                         label: `${sharePayload.title} - ${sharePayload.artist}`,
                     },
+                    // 带上歌词上下文，聊天里这条分享才会渲染成取色歌词卡，
+                    // 而不是普通音乐分享卡；角色后续也能看到这段歌词。
+                    listeningContext: sharePayload.listeningContext ?? null,
                 });
             } else {
                 const content = formatXiaohongshuShareForPrompt({
