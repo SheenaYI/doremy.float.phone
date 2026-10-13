@@ -6,6 +6,11 @@ export type MomentPost = {
     authorType: "user" | "character";
     authorId: string;               // characterId or "user"
     content: string;
+    /**
+     * 分享到朋友圈的歌词卡。带上它时，这条动态渲染成取色歌词卡而不是纯文字，
+     * 且正文以 caption（用户写的附言）为准。
+     */
+    musicLyricShare?: { title: string; artist: string; text: string; coverUrl?: string; caption?: string };
     photoUrl?: string;              // user-uploaded base64 image
     photoDescription?: string;      // AI-generated photo description (for placeholder rendering)
     photoUseReferenceImage?: boolean; // AI-generated photo should use character reference image

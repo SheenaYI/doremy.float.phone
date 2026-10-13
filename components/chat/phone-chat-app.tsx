@@ -26,9 +26,14 @@ export type PhoneChatAppProps = {
     onSessionChange?: (session: ChatSession | null) => void;
     sharePayload?: ChatSharePayload | null;
     onShareDone?: () => void;
+    /**
+     * 递增以请求切到朋友圈页。分享表单发布到朋友圈后用它导航过去，
+     * 否则动态虽然发出去了，用户却停在聊天页、看不到结果。
+     */
+    feedsRequest?: number;
 };
 
-export const PhoneChatApp = memo(function PhoneChatApp({ onClose, initialSessionId, onSessionChange, sharePayload, onShareDone }: PhoneChatAppProps) {
+export const PhoneChatApp = memo(function PhoneChatApp({ onClose, initialSessionId, onSessionChange, sharePayload, onShareDone, feedsRequest = 0 }: PhoneChatAppProps) {
     const [activeTab, setActiveTab] = useState<TabKey>("messages");
     const [activeSession, setActiveSession] = useState<ChatSession | null>(null);
     const [activeMascot, setActiveMascot] = useState(false);
@@ -76,6 +81,14 @@ export const PhoneChatApp = memo(function PhoneChatApp({ onClose, initialSession
             setActiveTab("contacts");
         }
     }, [sharePayload]);
+
+    // 分享表单发布到朋友圈后请求切过去：动态已经发出，停在聊天页会让人以为没成功
+    useEffect(() => {
+        if (!feedsRequest) return;
+        setActiveMascot(false);
+        setActiveSession(null);
+        setActiveTab("feeds");
+    }, [feedsRequest]);
 
     useEffect(() => {
         const handler = (e: Event) => {

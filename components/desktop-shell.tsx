@@ -11,6 +11,7 @@ import { PhoneThemeApp } from "@/components/phone-theme-app";
 import { PhoneCharacterApp } from "@/components/phone-character-app";
 import { PhoneSettingsApp } from "@/components/phone-settings-app";
 import { PhoneChatApp } from "@/components/chat/phone-chat-app";
+import ShareDestinationSheet from "@/components/chat/share-destination-sheet";
 import { PhonePlaceholderApp } from "@/components/phone-placeholder-app";
 import MusicApp from "@/components/music/music-app";
 import MusicPlayer from "@/components/music/music-player";
@@ -2519,6 +2520,8 @@ html,body{margin:0;padding:0;width:100%;height:100%;background:#121110;color:rgb
   // Mini chat window state
   const [showMiniChat, setShowMiniChat] = useState(false);
   const [miniSharePayload, setMiniSharePayload] = useState<ChatSharePayload | null>(null);
+  // 递增以请求聊天 App 切到朋友圈页（分享到朋友圈后导航过去）
+  const [chatFeedsRequest, setChatFeedsRequest] = useState(0);
   const miniSessionRef = useRef<ChatSession | null>(null);
   const handleMiniChatClose = useCallback(() => {
     setShowMiniChat(false);
@@ -2535,6 +2538,11 @@ html,body{margin:0;padding:0;width:100%;height:100%;background:#121110;color:rgb
     setActiveApp("chat" as IconId);
     const sid = miniSessionRef.current?.id;
     if (sid) setChatInitSessionId(sid);
+  }, []);
+  // 关闭分发表单：清掉载荷即回到普通小窗状态
+  const handleMiniShareSheetClose = useCallback(() => {
+    setShowMiniChat(false);
+    setMiniSharePayload(null);
   }, []);
   useEffect(() => {
     const handler = (e: Event) => {
@@ -2560,6 +2568,24 @@ html,body{margin:0;padding:0;width:100%;height:100%;background:#121110;color:rgb
       window.dispatchEvent(new CustomEvent(CHAT_OPEN_SESSION_EVENT, { detail: { sessionId } }));
     }, 0);
   }, []);
+
+  /**
+   * 分享完成后导航到目标。
+   * 发给某人 → 直接打开那个会话，落在聊天里看到刚发的歌词卡；
+   * 发到朋友圈 → 关掉播放器并请求聊天 App 切到朋友圈页
+   * （否则动态虽然发出去了，用户还停在聊天页、看不到结果）。
+   */
+  const handleMiniShareView = useCallback((destination: string) => {
+    setShowMiniChat(false);
+    setMiniSharePayload(null);
+    musicOverlayControllerRef.current?.closeFullPlayer();
+    setActiveApp("chat" as IconId);
+    if (destination === "moments") {
+      setChatFeedsRequest(value => value + 1);
+      return;
+    }
+    openChatSessionFromNotice(destination);
+  }, [openChatSessionFromNotice]);
 
   // 离线推送通知点击 → 壳把 App 拉起并写入 #open-chat=<sessionId> 深链。
   // 冷启动时 hash 首帧就在，但要等聊天数据水合完（desktopReady）再开，
@@ -4620,7 +4646,7 @@ html,body{margin:0;padding:0;width:100%;height:100%;background:#121110;color:rgb
               {/* Mini chat window — persists across music pages */}
               <MiniAppWindow
                 title="聊天"
-                visible={showMiniChat}
+                visible={showMiniChat && !miniSharePayload}
                 onClose={handleMiniChatClose}
                 onExpand={handleMiniChatExpand}
               >
@@ -4629,8 +4655,19 @@ html,body{margin:0;padding:0;width:100%;height:100%;background:#121110;color:rgb
                   onSessionChange={handleMiniChatSessionChange}
                   sharePayload={miniSharePayload}
                   onShareDone={handleMiniShareDone}
+                  feedsRequest={chatFeedsRequest}
                 />
               </MiniAppWindow>
+
+              {/* 分享分发：选择私聊 / 群聊 / 朋友圈。有小窗分享载荷时由它接管，
+                  小窗本身不显示，避免两个界面叠在一起（与上游同构）。 */}
+              {showMiniChat && miniSharePayload && (
+                <ShareDestinationSheet
+                  payload={miniSharePayload}
+                  onClose={handleMiniShareSheetClose}
+                  onView={handleMiniShareView}
+                />
+              )}
 
               <div
                 ref={workspaceRef}

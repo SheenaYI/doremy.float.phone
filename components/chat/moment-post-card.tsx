@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
 import type { MomentPost, MomentComment } from "@/lib/moments-types";
 import { BilingualTextBlock, MediaImageWithPreview } from "@/components/chat/message-bubble";
+import { LyricShareCard } from "@/components/music/lyric-share-card";
 import { MediaPreviewOverlay } from "@/components/chat/media-preview-overlay";
 import {
     loadMomentComments,
@@ -355,11 +356,22 @@ export function MomentPostCard({ post, onUpdate, onRequestDelete, onOpenCommentC
 
             {/* Text content */}
             <div className="feed-post-content ts-16 leading-[1.75] text-[var(--c-text-title)] whitespace-pre-wrap break-words mb-3 w-full">
-                <BilingualTextBlock
-                    text={post.content}
-                    mode="plain"
-                    defaultExpanded={defaultTranslationExpanded}
-                />
+                {/* 歌词卡：分享歌词到朋友圈时渲染成取色卡片，而不是一段纯文字。
+                    动态正文是用户写的附言（caption），歌词本身在卡片里。 */}
+                {post.musicLyricShare ? (
+                    <LyricShareCard
+                        title={post.musicLyricShare.title}
+                        artist={post.musicLyricShare.artist}
+                        text={post.musicLyricShare.text}
+                        coverUrl={post.musicLyricShare.coverUrl}
+                    />
+                ) : (
+                    <BilingualTextBlock
+                        text={post.content}
+                        mode="plain"
+                        defaultExpanded={defaultTranslationExpanded}
+                    />
+                )}
             </div>
 
             {/* Location */}
