@@ -5033,20 +5033,9 @@
    移植自 Yyk-Y2k/ai-virtual-phone-Y2Kversion 的 styles/music.css（AGPL-3.0，
    署名见 README 第六节）。按选择器逐个挑选，未整段复制：上游该区间夹着大量
    music-float / music-app 规则，本仓库已有自己的版本，不能被覆盖。 */
-/* 环绕容器。定位到「封面中心」而不是写死的 left/top：
-   折叠态封面 56×56、展开态 48×48，写死偏移在两种尺寸下不可能同时对准 ——
-   这正是此前"环偏右下、没套住封面"的原因。
-   坐标取实测值：折叠态封面中心约 (36,36)，展开态为 (37,42)。 */
-.listening-planets {
-    position: absolute;
-    left: var(--listen-center-x, 36px);
-    top: var(--listen-center-y, 36px);
-    width: var(--listen-ring-size, 80px);
-    height: var(--listen-ring-size, 80px);
-    transform: translate(-50%, -50%);
-    pointer-events: none;
-    z-index: 3;
-}
+/* 环绕容器：照抄上游参数（此前我自创了一套 --listen-center-* 定位，反而更歪）。 */
+.listening-planets { position:absolute; left:3px; top:50%; margin-top:-26px; width:52px; height:52px; pointer-events:none; z-index:3; }
+.music-float[data-expanded] .listening-planets { left:6px; }
 .listening-orbit { position:absolute; inset:0; animation:listening-orbit-one 24s linear infinite; }
 .listening-orbit-char { animation-name:listening-orbit-two; }
 .listening-planet { position:absolute; right:0; top:17px; width:18px; height:18px; border-radius:50%; background:#f8d7e5; border:1.5px solid #fff; overflow:hidden; box-shadow:0 2px 6px #90335320; display:grid; place-items:center; font-size:10px; color:#833d58; animation:listening-upright-one 24s linear infinite; }
@@ -5065,7 +5054,7 @@
    容器在折叠/展开态分别是 80 / 72px，写死尺寸会让环超出容器、
    旋转基准也随之偏移 —— 这是"旋转范围不对"的另一个来源。
    SVG 用 viewBox 缩放，指定百分比即可。 */
-.listening-ring { position:absolute;inset:0;width:100%;height:100%;overflow:visible; }
+.listening-ring { position:absolute;inset:0;width:88px;height:88px;overflow:visible; }
 .listening-ring-base { stroke:rgba(121,126,140,.42);stroke-width:.7; }
 .listening-wave-window { opacity:0;animation:listening-ring-meeting 24s linear infinite; }
 @keyframes listening-ring-meeting { 0%,46%,72%,100%{opacity:0} 49%,67%{opacity:1} }
@@ -5141,13 +5130,7 @@
    被一并删掉了，导致展开态尺寸与收起按钮样式缺失，这里恢复。 */
 /* 展开态保留环绕（不按上游隐藏）：用户点开就是想看"谁和我一起听"，
    把环绕藏起来等于点开就失去这条信息。改为跟随展开态收小的 48px 封面。 */
-.music-float[data-expanded] .listening-planets {
-    /* 展开态封面 48×48、中心实测 (37,42)。环缩到 72px 才落在 84px 高度内，
-       否则会被浮窗的 overflow:hidden 裁掉上下两端（此前展开后几乎看不见）。 */
-    --listen-center-x: 37px;
-    --listen-center-y: 42px;
-    --listen-ring-size: 72px;
-}
+/* 展开态覆盖已并入上方上游规则（left:6px） */
 .music-float[data-expanded] .music-float-inner { padding:0 40px 0 12px;gap:10px; }
 .music-float[data-expanded] .music-float-cover-wrap { width:48px;height:48px;border-radius:14px;background:transparent;box-shadow:none;animation:none;overflow:hidden; }
 .music-float[data-expanded] .music-float-vinyl-center { width:100%;height:100%;border-radius:inherit;clip-path:none; }

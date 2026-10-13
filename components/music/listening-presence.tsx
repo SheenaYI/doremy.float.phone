@@ -37,10 +37,13 @@ function runListeningSizeAudit() {
             const rows = selectors.map(selector => {
                 const el = document.querySelector(selector);
                 if (!el) return `${selector.padEnd(32)} 元素不存在（条件渲染没走到）`;
-                const rect = el.getBoundingClientRect();
                 const style = getComputedStyle(el);
                 const hidden = style.display === "none";
-                return `${selector.padEnd(32)} ${Math.round(rect.width)}×${Math.round(rect.height)}` +
+                // 用 offsetWidth/Height 而不是 getBoundingClientRect：
+                // 环绕一直在旋转，外接矩形会给出误导性的尺寸（曾量出 122×122，
+                // 而父容器实际只有 52×52）。
+                const h = el as HTMLElement;
+                return `${selector.padEnd(32)} ${h.offsetWidth}×${h.offsetHeight}` +
                     ` display=${style.display}${hidden ? " ← 被隐藏" : ""} pos=${style.position} overflow=${style.overflow}`;
             });
             const images = [...document.querySelectorAll<HTMLImageElement>(
@@ -204,7 +207,7 @@ function ListeningWaveRing() {
                     // 半径用视框单位（88 的一半再留出线长），不用 px：
                     // 环的容器在折叠/展开态是 80 / 72px，SVG 会按 viewBox 等比缩放，
                     // 写死 px 会让短线落到环外，看起来"半径不对"。
-                    <g key={index} transform={`translate(44 44) rotate(${bar.rotation}) translate(0 -30)`}>
+                    <g key={index} transform={`translate(44 44) rotate(${bar.rotation}) translate(0 -32)`}>
                         <line
                             className="listening-spectrum-bar"
                             x1="0" y1="0" x2="0" y2={-bar.length}
