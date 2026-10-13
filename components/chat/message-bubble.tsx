@@ -10,6 +10,7 @@ import { loadCharacters } from "@/lib/character-storage";
 import { CHAT_OPEN_SESSION_EVENT, dispatchOpenAddContact } from "@/lib/chat-notification-events";
 import { ContactCardGenerateFlow } from "@/components/chat/contact-card-generate-flow";
 import { ListeningInviteCard } from "@/components/chat/listening-invite-card";
+import { LyricShareCard } from "@/components/music/lyric-share-card";
 import { MediaPreviewOverlay } from "@/components/chat/media-preview-overlay";
 import { findStickerByName } from "@/lib/sticker-data";
 import { splitBilingualText } from "@/lib/bilingual-text";
@@ -2241,6 +2242,22 @@ function MediaFileBubble({
 function MusicShareBubble({ msg, onPlay }: { msg: ChatMessage; onPlay?: (title: string, artist?: string) => void }) {
     const title = msg.mediaData?.musicTitle || "未知歌曲";
     const artist = msg.mediaData?.musicArtist || "";
+    // 用户在播放器里选了一段歌词时会带上 listeningContext.reference。
+    // 那种情况下渲染成取色的歌词卡（背景与文字色取自封面），而不是普通分享卡 ——
+    // 两者视觉与语义都不同：分享卡是"推荐这首歌"，歌词卡是"我在说这一句"。
+    if (msg.listeningContext?.reference) {
+        return (
+            <div style={{ width: "min(340px, 100%)" }} onClick={(event) => event.stopPropagation()}>
+                <LyricShareCard
+                    title={title}
+                    artist={artist}
+                    text={msg.listeningContext.reference.text}
+                    coverUrl={msg.mediaData?.musicCoverUrl}
+                    onPlay={onPlay ? () => onPlay(title, artist || undefined) : undefined}
+                />
+            </div>
+        );
+    }
     return (
         <div
             className="chat-music-share-card"

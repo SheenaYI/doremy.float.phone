@@ -18,6 +18,12 @@ import MusicCommentsPage from "./music-comments";
 import MusicArtistPage from "./music-artist";
 import { ListeningPlayerPresence } from "./listening-presence";
 import { loadMusicBg, playerBgStyle, MUSIC_BG_EVENT, type MusicBgConfig } from "@/lib/music-bg";
+import { createMusicListeningContext, lyricTimestamp, type MusicListeningContext, type TimedLyric } from "@/lib/music-listening";
+import { LyricShareCard } from "./lyric-share-card";
+import { Send } from "lucide-react";
+import { lyricRange, activeLyricIndex } from "@/lib/lyric-selection";
+import { getMusicControlBridge } from "@/lib/music-control-bridge";
+import { LOCAL_IDENTITY_ID } from "@/lib/local-identity";
 
 const PLAY_MODE_ICONS: Record<PlayMode, { svg: string; label: string }> = {
     sequence: {
@@ -275,6 +281,78 @@ export default function MusicPlayer() {
         if (line) player.seek(line.time);
     }, [player]);
 
+    // ── 歌词选句：长按进入选择，拖动扩展范围，松手完成 ──
+    // 点击仍是 seek（与长按不冲突：长按后才进入选择态）。
+    const [lyricSelection, setLyricSelection] = useState<[number, number] | null>(null);
+    const [selectedLyric, setSelectedLyric] = useState<MusicListeningContext | null>(null);
+    const lyricPressRef = useRef<{ timer: ReturnType<typeof setTimeout> | null; index: number }>({ timer: null, index: -1 });
+    const lyricDragRef = useRef(false);
+    const selectionRef = useRef<[number, number] | null>(null);
+
+    /** 由当前播放快照生成歌词上下文；拿不到桥时退回播放器自身状态。 */
+    const buildLyricContext = useCallback((reference?: TimedLyric, selectedLines?: TimedLyric[]) => {
+        const bridge = getMusicControlBridge();
+        const snapshot = bridge?.getState();
+        const source = snapshot && snapshot.currentTrack?.id === player.currentTrack?.id ? snapshot : null;
+        if (!source) return null;
+        const context = createMusicListeningContext(source, LOCAL_IDENTITY_ID, new Date().toISOString(), reference);
+        if (!context) return null;
+        return selectedLines?.length ? { ...context, selectedLines, reference: reference ?? context.reference } : context;
+    }, [player.currentTrack?.id]);
+
+    const cancelLyricPress = useCallback(() => {
+        if (lyricPressRef.current.timer) clearTimeout(lyricPressRef.current.timer);
+        lyricPressRef.current = { timer: null, index: -1 };
+    }, []);
+
+    /** 从指针位置推算落在第几行；用于拖动扩展范围。 */
+    const lyricIndexFromPoint = useCallback((clientY: number): number => {
+        const container = lyricsContainerRef.current;
+        const lines = parsedLyrics.current;
+        if (!container || !lines.length) return -1;
+        const rect = container.getBoundingClientRect();
+        const children = Array.from(container.children) as HTMLElement[];
+        for (let i = 0; i < children.length; i++) {
+            const box = children[i].getBoundingClientRect();
+            if (clientY >= box.top && clientY <= box.bottom) return i;
+        }
+        // 落在行间空隙时按相对位置估算，避免拖到空隙就丢范围
+        const ratio = (clientY - rect.top) / Math.max(1, rect.height);
+        return Math.max(0, Math.min(lines.length - 1, Math.round(ratio * (lines.length - 1))));
+    }, []);
+
+    const finishLyricRange = useCallback(() => {
+        const lines = selectionRef.current;
+        if (!lines) return;
+        const picked = lyricRange(parsedLyrics.current, ...lines);
+        if (!picked.length) return;
+        const context = buildLyricContext(
+            { time: picked[0].time, text: picked.map(line => line.text).join("\n") },
+            picked,
+        );
+        if (context) setSelectedLyric(context);
+    }, [buildLyricContext]);
+
+    const sendSelectedLyric = useCallback(() => {
+        if (!selectedLyric) return;
+        window.dispatchEvent(new CustomEvent("open-mini-chat", {
+            detail: {
+                share: {
+                    type: "music",
+                    title: selectedLyric.title,
+                    artist: selectedLyric.artist,
+                    coverUrl: player.currentTrack?.coverUrl,
+                    lyricMode: "share",
+                    // 带上上下文，聊天侧据此渲染成取色歌词卡而不是普通分享卡
+                    listeningContext: selectedLyric,
+                },
+            },
+        }));
+        setSelectedLyric(null);
+        setLyricSelection(null);
+        selectionRef.current = null;
+    }, [selectedLyric, player.currentTrack?.coverUrl]);
+
     const [liked, setLiked] = useState(false);
     const [showPlaylistPicker, setShowPlaylistPicker] = useState(false);
     const [playlists, setPlaylists] = useState<NeteasePlaylist[]>([]);
@@ -486,16 +564,73 @@ export default function MusicPlayer() {
             {/* Body — cover / vinyl / glow lyrics */}
             <div className="mp-body">
                 {view === "lyrics" ? (
-                    <div className="mp-lyrics-wrap" onClick={() => setView("cover")}>
+                    <div
+                        className="mp-lyrics-wrap"
+                        // 选中歌词时不切回封面：那一下点击多半是想调整/确认选择，
+                        // 把界面切走会让人以为选择丢了。取消选择用下面的按钮。
+                        onClick={() => { if (!lyricSelection) setView("cover"); }}
+                    >
                         {hasLyrics ? (
-                            <div className="mp-lyrics" ref={lyricsContainerRef}>
+                            <div
+                                className="mp-lyrics"
+                                ref={lyricsContainerRef}
+                                // 长按进入选句、拖动扩展范围、松手完成。
+                                // 不动点击：点击仍是 seek（由行上的 onClick 处理），
+                                // 长按取消时也不会误触发 seek。
+                                onPointerDown={(event) => {
+                                    if (event.button !== 0) return;
+                                    const idx = lyricIndexFromPoint(event.clientY);
+                                    if (idx < 0) return;
+                                    cancelLyricPress();
+                                    lyricPressRef.current = {
+                                        index: idx,
+                                        timer: setTimeout(() => {
+                                            lyricDragRef.current = true;
+                                            selectionRef.current = [idx, idx];
+                                            setLyricSelection([idx, idx]);
+                                            setSelectedLyric(null);
+                                        }, 420),
+                                    };
+                                }}
+                                onPointerMove={(event) => {
+                                    if (!lyricDragRef.current || !selectionRef.current) return;
+                                    const idx = lyricIndexFromPoint(event.clientY);
+                                    if (idx < 0) return;
+                                    const anchor = selectionRef.current[0];
+                                    const next: [number, number] = [anchor, idx];
+                                    selectionRef.current = next;
+                                    setLyricSelection(next);
+                                }}
+                                onPointerUp={() => {
+                                    cancelLyricPress();
+                                    if (lyricDragRef.current) {
+                                        lyricDragRef.current = false;
+                                        finishLyricRange();
+                                    }
+                                }}
+                                onPointerCancel={() => {
+                                    cancelLyricPress();
+                                    lyricDragRef.current = false;
+                                }}
+                                onLostPointerCapture={() => {
+                                    cancelLyricPress();
+                                    lyricDragRef.current = false;
+                                }}
+                            >
                                 {parsedLyrics.current.map((line, i) => {
                                     const dist = Math.abs(i - activeLyricIdx);
+                                    // 选中态：范围两端与中间用不同标记，方便看清选了哪几句
+                                    const inSelection = lyricSelection
+                                        ? i >= Math.min(...lyricSelection) && i <= Math.max(...lyricSelection)
+                                        : false;
+                                    const isEdge = lyricSelection ? i === lyricSelection[0] || i === lyricSelection[1] : false;
                                     return (
                                         <div
                                             key={i}
                                             className="mp-lyric-line"
                                             {...(i === activeLyricIdx ? { "data-active": "" } : dist === 1 ? { "data-near": "" } : {})}
+                                            {...(inSelection ? { "data-selected": "" } : {})}
+                                            {...(isEdge ? { "data-selected-edge": "" } : {})}
                                             onClick={(e) => handleLyricClick(i, e)}
                                         >
                                             {line.text || " "}
@@ -506,6 +641,34 @@ export default function MusicPlayer() {
                         ) : (
                             <div className="mp-lyrics mp-lyrics-empty">
                                 <div className="mp-lyric-line" data-active="">暂无歌词</div>
+                            </div>
+                        )}
+                        {/* 选句后的操作条：先给一张歌词卡预览，确认无误再分享。
+                            做成"先预览后发送"而不是直接发，是因为拖选很容易多选一句或少选一句，
+                            发出去就收不回来了。 */}
+                        {selectedLyric?.reference && (
+                            <div className="mp-lyric-actions" onClick={(event) => event.stopPropagation()} role="group" aria-label="歌词分享">
+                                <div className="mp-lyric-sheet-heading">
+                                    <span>歌词片段 · {lyricTimestamp(selectedLyric.reference.time)}</span>
+                                    <button
+                                        type="button"
+                                        aria-label="取消选择"
+                                        onClick={() => { setSelectedLyric(null); setLyricSelection(null); selectionRef.current = null; }}
+                                    >
+                                        取消
+                                    </button>
+                                </div>
+                                <LyricShareCard
+                                    title={track.title}
+                                    artist={track.artist || "未知歌手"}
+                                    coverUrl={track.coverUrl}
+                                    text={selectedLyric.reference.text}
+                                />
+                                <div className="mp-lyric-action-buttons">
+                                    <button type="button" onClick={sendSelectedLyric}>
+                                        <Send size={18} strokeWidth={1.7} /><span>分享歌词</span>
+                                    </button>
+                                </div>
                             </div>
                         )}
                     </div>

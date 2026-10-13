@@ -240,6 +240,11 @@ export type ChatMessage = {
         blacklistUserName?: string;      // 拉黑事件发生时的用户名（用于事件详情与上下文）
         musicTitle?: string;      // 音乐标题
         musicArtist?: string;     // 音乐歌手
+        /**
+         * 音乐封面地址。分享歌词卡时用来给卡片取色（背景与文字色取自封面），
+         * 同时保留用户当时看到的那张封面 —— 之后曲库换了封面也不影响历史卡片。
+         */
+        musicCoverUrl?: string;
         xiaohongshuAuthor?: string;       // 小红书分享作者
         xiaohongshuTitle?: string;        // 小红书分享标题
         xiaohongshuBody?: string;         // 小红书分享正文

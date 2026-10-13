@@ -5154,3 +5154,37 @@
 @media(prefers-color-scheme:dark) {
     .music-float[data-together][data-expanded] { background:rgba(55,37,48,.8); border-color:#efbbd438; }
 }
+
+/* ── 歌词选句：操作条、片段标题与选中态 ────────────────────────────
+   移植自 Yyk-Y2k/ai-virtual-phone-Y2Kversion 的 styles/music.css（AGPL-3.0）。
+   上游把片段标题与选中态写作 .mp-apple 作用域（其播放器外壳），本仓库外壳
+   根类是 .mp-lumen，故按等价作用域改写；操作条本身不依赖外壳，原样保留。
+   另：上游用 --c-music-sheet，本仓库未定义该变量，这里给回退值。 */
+
+/* 拖选完成后的操作条：深色磨砂覆盖在歌词上，保证任何取色下都读得清 */
+.mp-lyric-actions {
+    position: absolute; bottom: 12px; left: 16px; right: 16px;
+    padding: 14px; border-radius: 22px; color: #fff;
+    background: rgba(24,30,44,.82); border: 1px solid rgba(255,255,255,.18);
+    backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px);
+    box-shadow: 0 8px 24px rgba(0,0,0,.16); cursor: default;
+}
+.mp-lyric-selected-text { font-size: 14px; line-height: 1.5; max-height: 64px; overflow: auto; overflow-wrap: anywhere; }
+.mp-lyric-selected-text span { font-variant-numeric: tabular-nums; color: rgba(255,255,255,.65); margin-right: 6px; }
+.mp-lyric-action-buttons { display: flex; gap: 6px; margin-top: 10px; }
+.mp-lyric-action-buttons button {
+    flex: 1; min-height: 44px; border-radius: 12px; border: 1px solid rgba(255,255,255,.15);
+    background: rgba(255,255,255,.1); color: inherit; font-size: 13px; cursor: pointer;
+}
+
+
+/* 片段标题行：时间戳 + 取消 */
+.mp-lumen .mp-lyric-sheet-heading, .mp-lyric-sheet-heading { display:flex; align-items:center; justify-content:space-between; gap:8px; color:var(--c-music-accent); font-size:12px; margin-bottom:10px; }
+.mp-lumen .mp-lyric-sheet-heading button, .mp-lyric-sheet-heading button { min-height:32px; padding:0 10px; border:0; border-radius:10px; background:rgba(255,255,255,.12); color:inherit; font:inherit; cursor:pointer; }
+
+/* 选中态：范围两端与中间区分，让用户看清选了哪几句 */
+.mp-lumen .mp-lyric-line[data-selected], .mp-lyric-line[data-selected] { opacity:1; }
+.mp-lumen .mp-lyric-line[data-selected-edge], .mp-lyric-line[data-selected-edge] { color:var(--c-music-accent); font-weight:700; }
+
+/* 减少动效偏好下取消选择条的出现过渡 */
+@media(prefers-reduced-motion:reduce) { .mp-lyric-actions { transition:none; } }
