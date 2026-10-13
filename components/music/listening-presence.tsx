@@ -220,7 +220,19 @@ function ListeningWaveRing() {
     );
 }
 
-/** 封面上的双头像环绕：只在真的在一起听且音乐在放时环绕。 */
+/**
+ * 封面上的双头像环绕。
+ *
+ * 注意：当前没有调用方。
+ *
+ * 它曾在桌面胶囊浮窗上使用，但环绕位置在折叠/展开两种封面尺寸下都难以对准，
+ * 反复调整后按使用反馈移除了 —— 浮窗恢复成原本的无色磨砂玻璃形态。
+ * 播放器里的一起听状态由 ListeningPlayerPresence 承担。
+ *
+ * 保留实现是因为它在别的容器（例如播放器封面区）仍可用，且参数已按上游逐行
+ * 对齐；若要在新位置启用，请先确认该容器的封面尺寸与上游一致
+ * （上游假设折叠 72×72 / 展开 260×84、封面 56 / 48），否则定位会偏。
+ */
 export function ListeningPlanets({ presence, playing }: { presence: ReturnType<typeof useListeningPresence>; playing: boolean }) {
     if (!presence.room) return null;
     return (

@@ -5035,7 +5035,8 @@
    music-float / music-app 规则，本仓库已有自己的版本，不能被覆盖。 */
 /* 环绕容器：照抄上游参数（此前我自创了一套 --listen-center-* 定位，反而更歪）。 */
 .listening-planets { position:absolute; left:3px; top:50%; margin-top:-26px; width:52px; height:52px; pointer-events:none; z-index:3; }
-.music-float[data-expanded] .listening-planets { left:6px; }
+/* 浮窗内的环绕已移除（按使用反馈），原本给它的展开态覆盖 left:6px 一并删除。
+   .listening-planets 本身保留 —— 播放器的成员入口仍在使用它。 */
 .listening-orbit { position:absolute; inset:0; animation:listening-orbit-one 24s linear infinite; }
 .listening-orbit-char { animation-name:listening-orbit-two; }
 .listening-planet { position:absolute; right:0; top:17px; width:18px; height:18px; border-radius:50%; background:#f8d7e5; border:1.5px solid #fff; overflow:hidden; box-shadow:0 2px 6px #90335320; display:grid; place-items:center; font-size:10px; color:#833d58; animation:listening-upright-one 24s linear infinite; }

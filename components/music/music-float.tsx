@@ -3,7 +3,6 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useMusicControlsOptional } from "@/lib/music-context";
-import { useListeningPresence, ListeningPlanets } from "./listening-presence";
 import { MusicMarquee } from "@/components/widgets/music-marquee";
 
 const DRAG_START_THRESHOLD = 6;
@@ -40,8 +39,8 @@ export default function MusicFloat({ hidden }: { hidden?: boolean }) {
     const dismissTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const [expanded, setExpanded] = useState(false);
     const [dismissing, setDismissing] = useState(false);
-    // 一起听状态：浮窗要显示"正在和谁一起听"，并在封面上挂双头像环绕
-    const presence = useListeningPresence();
+    // 浮窗不再展示一起听的存在感（环绕头像与状态文字都已移除，按使用反馈）。
+    // 一起听的入口与状态仍在播放器顶栏的 ListeningPlayerPresence 里。
 
     const clampPos = useCallback((x: number, y: number) => {
         const el = floatRef.current;
@@ -198,8 +197,6 @@ export default function MusicFloat({ hidden }: { hidden?: boolean }) {
                             </div>
                         )}
                     </div>
-                    {/* 共听时封面上的双头像环绕（内部分辨率与状态，非共听时不渲染） */}
-                    <ListeningPlanets presence={presence} playing={player.isPlaying} />
                 </div>
 
                 {/* Track Info */}
