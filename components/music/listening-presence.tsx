@@ -26,13 +26,7 @@ const serverSnapshot = () => null;
  * —— 究竟是容器没尺寸、图片没约束、还是某个祖先没被裁剪，只有实测才知道。
  * 在生产构建里由 NODE_ENV 守卫剔除。
  */
-function useListeningSizeAudit(roomId?: string) {
-    useEffect(() => {
-        if (process.env.NODE_ENV === "production") return;
-        // 暴露成全局函数，便于直接在控制台敲一行核对 —— 不用粘贴一段代码。
-        // 需要区分「元素不存在」与「元素存在但被 display:none 隐藏」：
-        // 这两者的成因完全不同（前者是条件渲染没走到，后者是样式把它藏了）。
-        (window as unknown as Record<string, unknown>).__dshListeningAudit = () => {
+function runListeningSizeAudit() {
             const selectors = [
                 ".listening-planets", ".listening-orbit", ".listening-planet",
                 ".listening-avatar-pair", ".listening-avatar-pair > span",
@@ -70,9 +64,42 @@ function useListeningSizeAudit(roomId?: string) {
                     `封面 x=${Math.round(c.left - f.left)} y=${Math.round(c.top - f.top)} ${Math.round(c.width)}×${Math.round(c.height)}`,
                     `封面中心 x=${Math.round(c.left - f.left + c.width / 2)} y=${Math.round(c.top - f.top + c.height / 2)}`);
             }
-            return { room, rows, images };
-        };
-    }, [roomId]);
+    return { room, rows, images };
+}
+
+/**
+ * 列出尺寸明显异常的元素。
+ *
+ * 用于"某某铺满整屏"这类问题：可能是容器没尺寸、图片没被约束、也可能是某个
+ * 根本没预期的元素在渲染。与其猜是哪个，不如把超过阈值的元素全列出来。
+ */
+function findOversizedElements(limit = 260) {
+    const offenders: string[] = [];
+    for (const el of document.querySelectorAll<HTMLElement>("*")) {
+        const rect = el.getBoundingClientRect();
+        if (rect.width < limit && rect.height < limit) continue;
+        const name = `${el.tagName.toLowerCase()}${el.id ? "#" + el.id : ""}` +
+            (typeof el.className === "string" && el.className ? "." + el.className.trim().split(/\s+/).join(".") : "");
+        const style = getComputedStyle(el);
+        offenders.push(
+            `${name.slice(0, 78)}\n    ${Math.round(rect.width)}×${Math.round(rect.height)}` +
+            ` pos=${style.position} display=${style.display} overflow=${style.overflow}`);
+    }
+    console.log(`[一起听·超尺寸元素] 阈值 ${limit}px，命中 ${offenders.length} 个：\n` + offenders.join("\n"));
+    return offenders;
+}
+
+/**
+ * 把诊断函数挂到 window 上，控制台敲一行即可核对。
+ *
+ * 刻意在模块加载时就挂（而不是放在组件的 effect 里）：放在 effect 里时，
+ * 组件没挂载或没重渲染就找不到这个函数，控制台会报 ReferenceError ——
+ * 而最需要它的场景恰恰是"界面没按预期渲染出来"，那时组件很可能就在异常状态。
+ */
+if (process.env.NODE_ENV !== "production" && typeof window !== "undefined") {
+    const w = window as unknown as Record<string, unknown>;
+    w.__dshListeningAudit = runListeningSizeAudit;
+    w.__dshListeningFindBig = findOversizedElements;
 }
 
 /**
@@ -92,22 +119,32 @@ export function useListeningPresence() {
     }, []);
 
     const room = useSyncExternalStore(subscribeListeningRoom, getListeningRoom, serverSnapshot);
-    useListeningSizeAudit(room?.id);
     const character = room ? loadCharacters().find(c => c.id === room.characterId) : null;
     const session = room ? loadChatSessions().find(s => s.id === room.sessionId) : null;
     const user = resolveUserIdentity();
 
     // 开发模式诊断：头像/名字取不到时很难从界面上判断是"数据为空"还是"样式没生效"。
-    // 生产构建会被 NODE_ENV 守卫剔除。
-    if (process.env.NODE_ENV !== "production" && room) {
+    // 放在 effect 里并只在关键值变化时打印 —— 直接写在渲染体里会每次渲染都刷一条，
+    // 把控制台淹掉（这个组件在拖动/动画期间渲染很频繁）。生产构建由 NODE_ENV 守卫剔除。
+    const avatar = character?.avatar;
+    const userName = user?.name;
+    const userAvatar = user?.avatarUrl;
+    const roomId = room?.id;
+    const roomStatus = room?.status;
+    const characterName = character?.name;
+    const sessionAlias = session?.alias;
+    useEffect(() => {
+        if (process.env.NODE_ENV === "production" || !roomId) return;
         console.log("[一起听·存在感]", {
-            roomId: room.id, status: room.status,
-            characterId: room.characterId, 找到角色: !!character,
-            角色名: character?.name, 角色头像: character?.avatar,
-            会话别名: session?.alias,
-            用户名: user?.name, 用户头像: user?.avatarUrl,
+            roomId, status: roomStatus,
+            characterId: room?.characterId, 找到角色: !!characterName,
+            角色名: characterName, 角色头像: avatar,
+            会话别名: sessionAlias,
+            用户名: userName, 用户头像: userAvatar,
         });
-    }
+        // 只在房间与头像/名字变化时打印，避免动画期间刷屏
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [roomId, roomStatus, characterName, avatar, sessionAlias, userName, userAvatar]);
 
     return {
         // 被婉拒的房间不再展示存在感：那不是"在一起听"
