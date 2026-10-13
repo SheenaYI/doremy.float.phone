@@ -14,6 +14,7 @@ import { emitChatPluginEvent, runChatPluginTransformSync } from "./chat-plugin-h
 import { parseAIResponse } from "./rich-message-parser";
 import { extractTextToolDirectiveText } from "./text-tool-protocol";
 import { findUserAvatarChangeIntent, inferAvatarDecisionFromReply } from "./chat-avatar-intent";
+import { captureMusicListeningContext } from "./music-listening-capture";
 
 export const DEFAULT_VISION_IMAGE_PROMPT_LIMIT = 1;
 export const MAX_VISION_IMAGE_PROMPT_LIMIT = 20;
@@ -1458,8 +1459,20 @@ export function pushChatMessage(msg: Omit<ChatMessage, "id" | "createdAt" | "sta
     status?: ChatMessageStatus;
     createdAt?: string;
 }): ChatMessage {
+    // 一起听/歌词上下文：与上游同一契约 —— 只在「用户主动发言」时尝试捕获。
+    //
+    // 三条排除都是有意的：
+    //   - 显式传了 listeningContext（引用草稿、测试）→ 原样保留，不被覆盖；
+    //   - 非用户消息（角色/系统）→ 歌词属于用户主动分享的内容；
+    //   - 无正文或非普通文本消息（卡片、系统通知）→ 没有"发言"可挂。
+    // captureMusicListeningContext 本身在无引用时返回 null，所以普通聊天不会带上上下文。
+    const listeningContext = msg.listeningContext !== undefined
+        ? msg.listeningContext
+        : msg.role === "user" && (!msg.origin || msg.origin === "chat") && msg.content.trim() && (!msg.mediaType || msg.mediaType === "quote")
+            ? captureMusicListeningContext(msg.createdAt) : undefined;
     let newMsg: ChatMessage = {
         ...msg,
+        listeningContext,
         id: createMessageId(),
         createdAt: msg.createdAt || new Date().toISOString(),
         order: getNextMessageOrder(msg.sessionId),
