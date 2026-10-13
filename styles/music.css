@@ -4986,3 +4986,40 @@
     font-size: calc(9px*var(--app-text-scale,1));
     color: color-mix(in srgb, var(--c-music-text) 55%, transparent);
 }
+
+/* ── 一起听邀请卡（唱片封套 + 滑动手势）─────────────────────────────
+   移植自 Yyk-Y2k/ai-virtual-phone-Y2Kversion 的 styles/music.css（AGPL-3.0，
+   署名见 README 第六节）。只取该卡片及其唱片视觉所需的选择器，上游同文件里
+   与本仓库已分叉的音乐播放器样式未被带入。 */
+.listening-invite-card { width:256px;max-width:100%;box-sizing:border-box;padding:16px 16px 0;border-radius:24px;color:#33313a;background:linear-gradient(135deg,rgba(255,248,251,.94),rgba(248,246,250,.87));border:1px solid rgba(255,255,255,.8);box-shadow:0 5px 20px #44253409,inset 0 1px 0 #fff9;backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);overflow:hidden; }
+.listening-invite-heading { display:flex;align-items:center;gap:6px;font-size:11px;letter-spacing:.08em;color:#ad6a82; }
+.listening-invite-main { display:flex;align-items:center;gap:12px;margin:13px 0 16px; }
+.listening-invite-cover { width:56px;height:56px;flex:none;border-radius:12px;overflow:hidden;display:grid;place-items:center;background:#f2e4eb;color:#b78398; }
+.listening-invite-cover img { width:100%;height:100%;display:block;object-fit:cover; }
+.listening-invite-copy { min-width:0;flex:1;font-size:12px;line-height:1.55;color:#77717d; }
+.listening-invite-copy strong { display:block;font-size:15px;font-weight:600;color:#34303a;margin-bottom:3px; }
+.listening-invite-copy small { display:block;font-size:11px;opacity:.8; }
+.listening-invite-footer { display:flex;justify-content:space-between;align-items:center;gap:8px;border-top:1px solid #9e788014;padding:10px 0;font-size:10px;color:#958691; }
+.listening-invite-footer [role="status"] { color:#aa6983; }
+.listening-invite-card[data-status="joined"] .listening-invite-footer [role="status"] { color:#b65078; }
+.listening-invite-record { width:248px;padding:15px 16px 0; }
+.listening-record-stage { position:relative;width:100%;height:150px;margin:14px 0 9px;isolation:isolate; }
+.listening-record-sleeve { position:absolute;left:4px;top:3px;width:136px;height:136px;border-radius:5px;overflow:hidden;z-index:2;background:#f1dce6;box-shadow:1px 2px 5px #50263f17,inset 0 0 0 1px #ffffff70; }
+.listening-record-sleeve>img { width:100%;height:100%;object-fit:cover;display:block; }
+.listening-record-sleeve-edge { position:absolute;inset:0;pointer-events:none;background:linear-gradient(90deg,#ffffff48,transparent 3%,transparent 95%,#32102120);box-shadow:inset 0 0 0 1px #ffffff38;border-radius:inherit; }
+.listening-record-slide { position:absolute;left:8px;top:7px;width:128px;height:128px;transform:translateX(27px);transition:transform .65s cubic-bezier(.22,1,.36,1); }
+.listening-record-disc { position:relative;width:100%;height:100%;border-radius:50%;background:repeating-radial-gradient(circle,transparent 0 3px,#fff5 3.5px,transparent 4px),conic-gradient(from 35deg,#ffd9e8,#fff4f9,#efb8d1,#ffeaf3,#eeb5cf,#fff3f8,#ffd9e8);box-shadow:inset 0 0 0 1px #ffffffb0,0 2px 8px #83455f18;animation:listening-invite-disc-spin 12s linear infinite;animation-play-state:paused; }
+.listening-record-label { position:absolute;inset:42px;display:block;border-radius:50%;overflow:hidden;background:#f5d1e1;border:1px solid #ffffff90; }
+.listening-record-label img { width:100%;height:100%;object-fit:cover;display:block;opacity:.85; }
+.listening-record-spindle { position:absolute;left:50%;top:50%;width:6px;height:6px;margin:-3px;border-radius:50%;background:#b9819b;box-shadow:0 0 0 3px #fff7; }
+.listening-invite-record[data-status="joined"] .listening-record-slide { transform:translateX(70px); }
+.listening-invite-record[data-status="joined"] .listening-record-disc { animation-play-state:running; }
+.listening-invite-record[data-status="declined"] .listening-record-slide { transform:translateX(0); }
+.listening-record-empty { display:flex;height:100%;align-items:center;justify-content:center;flex-direction:column;gap:14px;color:#b07d91;background:linear-gradient(145deg,#fae7ef,#e5c5d5); }
+.listening-record-empty>span { font-size:9px;letter-spacing:.22em; }
+.listening-invite-record .listening-invite-copy { padding:0 3px 13px; }
+.listening-invite-record .listening-invite-copy strong { font-size:14px; }
+@keyframes listening-invite-disc-spin { to { transform:rotate(360deg); } }
+.listening-invite-gesture-hint { color:var(--c-text-muted,#a47f91);font-size:10px;line-height:1.5;text-align:center;padding:4px 0 0;max-width:214px; }
+.listening-record-stage[role="button"]:focus-visible { outline:2px solid #df8baa;outline-offset:4px;border-radius:8px; }
+.listening-invite-record[data-status="accepted"] .listening-record-slide { transform:translateX(70px); }

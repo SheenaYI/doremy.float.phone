@@ -17,7 +17,8 @@
     "push:build-dist": "node scripts/build-personal-push-dist.mjs",
     "build:glass-icons": "node scripts/build-glass-icons.mjs",
     "check:lyric": "node scripts/check-lyric-color-range.cjs",
-    "check:listen": "node scripts/check-listening-capture-contract.cjs"
+    "check:listen": "node scripts/check-listening-capture-contract.cjs",
+    "check:invite": "node scripts/check-listening-invite-card.cjs"
   },
   "dependencies": {
     "@gltf-transform/functions": "^4.4.1",
