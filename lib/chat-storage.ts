@@ -1991,6 +1991,20 @@ export function retractChatMessage(messageId: string) {
     }
 }
 
+/** Delete chat messages older than the given timestamp in one session. */
+export function deleteChatMessagesBefore(sessionId: string, cutoffIso: string): number {
+    const cutoff = new Date(cutoffIso).getTime();
+    if (!Number.isFinite(cutoff)) return 0;
+    const ids = _messagesCache
+        .filter(message => message.sessionId === sessionId)
+        .filter(message => {
+            const created = new Date(message.createdAt).getTime();
+            return Number.isFinite(created) && created < cutoff;
+        })
+        .map(message => message.id);
+    return deleteChatMessagesByIds(sessionId, ids);
+}
+
 export function clearChatSessionMessages(sessionId: string) {
     const deletedMessages = _messagesCache.filter(m => m.sessionId === sessionId);
     _messagesCache = _messagesCache.filter(m => m.sessionId !== sessionId);

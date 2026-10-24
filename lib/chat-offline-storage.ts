@@ -91,6 +91,20 @@ export function clearChatOfflineTurns(sessionId: string): void {
     kvRemove(storageKey(sessionId));
 }
 
+/** Remove offline turns older than cutoff; returns removed count. */
+export function deleteChatOfflineTurnsBefore(sessionId: string, cutoffIso: string): number {
+    const cutoff = new Date(cutoffIso).getTime();
+    if (!Number.isFinite(cutoff)) return 0;
+    const turns = loadChatOfflineTurns(sessionId);
+    const kept = turns.filter(turn => {
+        const created = new Date(turn.createdAt).getTime();
+        return !Number.isFinite(created) || created >= cutoff;
+    });
+    const removed = turns.length - kept.length;
+    if (removed > 0) saveChatOfflineTurns(sessionId, kept);
+    return removed;
+}
+
 export function appendChatOfflineTurn(input: {
     sessionId: string;
     userContent: string;

@@ -8,6 +8,7 @@ import {
     ChatSession,
     clearChatSessionMessages,
     clearChatSessionToolHistory,
+    deleteChatMessagesBefore,
     saveChatSessions,
     loadChatSessions,
     loadChatMessages,
@@ -36,7 +37,7 @@ import {
     pruneExpiredGroupMutes,
     type GroupAdminAction,
 } from "@/lib/group-admin";
-import { clearChatOfflineTurns } from "@/lib/chat-offline-storage";
+import { clearChatOfflineTurns, deleteChatOfflineTurnsBefore } from "@/lib/chat-offline-storage";
 import { removeChatSessionCompletely } from "@/lib/chat-session-remove";
 import { triggerDeleteFriendReaction } from "@/lib/friend-request-engine";
 import { loadCharacters, saveCharacters } from "@/lib/character-storage";
@@ -450,6 +451,7 @@ export function ChatSettingsPanel({
 
     const [showConfirmClear, setShowConfirmClear] = useState(false);
     const [showConfirmClearOffline, setShowConfirmClearOffline] = useState(false);
+    const [clearByAge, setClearByAge] = useState<{ scope: "online" | "offline"; days: 7 | 30 } | null>(null);
     const [showConfirmClearTools, setShowConfirmClearTools] = useState(false);
     const [showConfirmDeleteSession, setShowConfirmDeleteSession] = useState(false);
     const [showConfirmDelete, setShowConfirmDelete] = useState(false);
@@ -855,6 +857,24 @@ export function ChatSettingsPanel({
         clearChatOfflineTurns(session.id);
         onOfflineHistoryCleared?.();
         setShowConfirmClearOffline(false);
+    };
+
+    const clearByAgeCutoff = () => {
+        if (!clearByAge) return new Date().toISOString();
+        return new Date(Date.now() - clearByAge.days * 24 * 60 * 60 * 1000).toISOString();
+    };
+
+    const handleClearByAge = () => {
+        if (!clearByAge) return;
+        if (clearByAge.scope === "offline" && offlineHistoryBusy) return;
+        const cutoff = clearByAgeCutoff();
+        if (clearByAge.scope === "online") {
+            deleteChatMessagesBefore(session.id, cutoff);
+        } else {
+            deleteChatOfflineTurnsBefore(session.id, cutoff);
+            onOfflineHistoryCleared?.();
+        }
+        setClearByAge(null);
     };
 
     const handleClearToolHistory = () => {
@@ -1600,6 +1620,48 @@ export function ChatSettingsPanel({
                             </span>
                         </div>
                     </button>
+                    <button className="menu-item" onClick={() => setClearByAge({ scope: "online", days: 7 })}>
+                        <ChatInfoIcon icon={Trash2} color="var(--c-danger)" />
+                        <div className="menu-label-group">
+                            <span className="menu-label menu-label-danger">清理 7 天前线上记录</span>
+                            <span className="menu-desc">保留最近 7 天，只删除更早的普通聊天消息</span>
+                        </div>
+                    </button>
+                    <button className="menu-item" onClick={() => setClearByAge({ scope: "online", days: 30 })}>
+                        <ChatInfoIcon icon={Trash2} color="var(--c-danger)" />
+                        <div className="menu-label-group">
+                            <span className="menu-label menu-label-danger">清理 30 天前线上记录</span>
+                            <span className="menu-desc">保留最近 30 天，只删除更早的普通聊天消息</span>
+                        </div>
+                    </button>
+                    <button
+                        className="menu-item"
+                        disabled={offlineHistoryBusy}
+                        onClick={() => {
+                            if (!offlineHistoryBusy) setClearByAge({ scope: "offline", days: 7 });
+                        }}
+                        style={offlineHistoryBusy ? { opacity: 0.55, cursor: "not-allowed" } : undefined}
+                    >
+                        <ChatInfoIcon icon={Trash2} color="var(--c-danger)" />
+                        <div className="menu-label-group">
+                            <span className="menu-label menu-label-danger">清理 7 天前线下记录</span>
+                            <span className="menu-desc">保留最近 7 天，只删除更早的线下轮次</span>
+                        </div>
+                    </button>
+                    <button
+                        className="menu-item"
+                        disabled={offlineHistoryBusy}
+                        onClick={() => {
+                            if (!offlineHistoryBusy) setClearByAge({ scope: "offline", days: 30 });
+                        }}
+                        style={offlineHistoryBusy ? { opacity: 0.55, cursor: "not-allowed" } : undefined}
+                    >
+                        <ChatInfoIcon icon={Trash2} color="var(--c-danger)" />
+                        <div className="menu-label-group">
+                            <span className="menu-label menu-label-danger">清理 30 天前线下记录</span>
+                            <span className="menu-desc">保留最近 30 天，只删除更早的线下轮次</span>
+                        </div>
+                    </button>
                     <button
                         className="menu-item"
                         disabled={offlineHistoryBusy}
@@ -1829,6 +1891,19 @@ export function ChatSettingsPanel({
                     cancelLabel="取消"
                     onConfirm={handleClearHistory}
                     onCancel={() => setShowConfirmClear(false)}
+                />
+            )}
+
+            {clearByAge && (
+                <ConfirmDialog
+                    title={`清理${clearByAge.days}天前的${clearByAge.scope === "online" ? "线上" : "线下"}记录？`}
+                    message={`只删除 ${clearByAge.days} 天前的${clearByAge.scope === "online" ? "普通聊天消息" : "线下轮次"}，最近 ${clearByAge.days} 天会保留。删除后无法恢复。是否继续？`}
+                    icon={AlertCircle}
+                    variant="danger"
+                    confirmLabel="删除"
+                    cancelLabel="取消"
+                    onConfirm={handleClearByAge}
+                    onCancel={() => setClearByAge(null)}
                 />
             )}
 
