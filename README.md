@@ -4,6 +4,34 @@
 
 本仓库基于小笼包老师的原始项目，并承接末末老师的二次开发版本继续迭代。主要围绕 Android 原生能力、全局通话、安卓离线推送、安卓现实桥及数据与交互体验等方向进行扩展和改进。
 
+### 二次开发提交分界
+
+本仓库以提交 [`7a1e04c2cb691fa1f74a6de7a9f4015b7e78bb6d`](https://github.com/SheenaYI/doremy.float.phone/commit/7a1e04c2cb691fa1f74a6de7a9f4015b7e78bb6d) 作为二次开发的分界点：
+
+- **该提交及之后的提交**：由 Sheena YI 进行修改、补充和适配。
+- **该提交之前（不含该提交）**：来自上游仓库的既有实现与历史提交。
+
+分界提交本身的信息：
+
+```text
+commit 7a1e04c2cb691fa1f74a6de7a9f4015b7e78bb6d
+Author: Sheena YI
+Date:   2026-08-28 01:39:08 +0800
+Subject: feat(story): story turns now drive memory event counter and auto-summarization
+```
+
+可以用以下命令核对分界之后的改动范围：
+
+```bash
+# 查看二次开发提交
+git log --oneline 7a1e04c2^..HEAD
+
+# 查看二次开发累计改动
+git diff 7a1e04c2^..HEAD --stat
+```
+
+需要特别说明的是：分界之后的提交也可能修改、重构或替换上游代码；具体文件归属仍应以逐条提交和代码内容为准。README 中的功能描述用于说明开发方向，不构成对所有文件原创性的声明。
+
 ## 二、上游项目的主要成果
 
 ### 1. 小笼包老师：原始项目与基础框架
