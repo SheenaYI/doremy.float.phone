@@ -187,6 +187,13 @@ function ModuleChipSelector({
   );
 }
 
+function formatShare(bytes: number, total: number): string {
+  if (total <= 0) return "0";
+  const value = (bytes / total) * 100;
+  if (value > 0 && value < 0.1) return "<0.1";
+  return value.toFixed(1);
+}
+
 function ModulePieChart({ modules, totalBytes }: { modules: ModuleStats[]; totalBytes: number }) {
   const radius = 44;
   const circumference = 2 * Math.PI * radius;
@@ -228,14 +235,67 @@ function ModulePieChart({ modules, totalBytes }: { modules: ModuleStats[]; total
           <div key={module.moduleId} className="data-pie-legend-item">
             <span className="data-pie-dot" style={{ background: MODULE_ACCENTS[module.moduleId] }} />
             <span className="data-pie-name">{module.label}</span>
-            <span className="data-pie-value">{module.percent}% · {formatBytes(module.bytes)}</span>
-            {module.details && module.details.length > 0 && (
-              <span className="data-pie-detail">
-                {module.details.slice(0, 3).map((detail) => `${detail.label}: ${formatBytes(detail.bytes)}`).join(" / ")}
-              </span>
-            )}
+            <span className="data-pie-value">{formatShare(module.bytes, totalBytes)}% · {formatBytes(module.bytes)}</span>
           </div>
         ))}
+      </div>
+      <div className="data-pie-breakdown">
+        <div className="data-pie-breakdown-head">
+          <span>细分占比</span>
+          <em>按总占用计算</em>
+        </div>
+        {visibleModules.length === 0 ? (
+          <p className="data-pie-breakdown-empty">还没有可统计的数据。</p>
+        ) : visibleModules.map((module) => {
+          const details = (module.details ?? []).filter((detail) => detail.bytes > 0);
+          const accent = MODULE_ACCENTS[module.moduleId];
+          return (
+            <section key={module.moduleId} className="data-breakdown-module">
+              <header>
+                <span className="data-pie-dot" style={{ background: accent }} />
+                <b>{module.label}</b>
+                <span>{formatShare(module.bytes, totalBytes)}% · {formatBytes(module.bytes)}</span>
+              </header>
+              {details.length > 0 ? (
+                <>
+                  <div className="data-breakdown-stack" aria-hidden="true">
+                    {details.map((detail, index) => (
+                      <i
+                        key={`${detail.id}-${index}`}
+                        style={{
+                          width: `${module.bytes > 0 ? (detail.bytes / module.bytes) * 100 : 0}%`,
+                          background: accent,
+                          opacity: Math.max(0.36, 0.82 - index * 0.1),
+                        }}
+                        title={`${detail.label} ${formatBytes(detail.bytes)}`}
+                      />
+                    ))}
+                  </div>
+                  <div className="data-breakdown-rows">
+                    {details.map((detail, index) => (
+                      <div className="data-breakdown-row" key={`${detail.id}-${index}`}>
+                        <span className="data-breakdown-name" title={detail.label}>{detail.label}</span>
+                        <span className="data-breakdown-bar" aria-hidden="true">
+                          <i
+                            style={{
+                              width: `${totalBytes > 0 ? (detail.bytes / totalBytes) * 100 : 0}%`,
+                              background: accent,
+                              opacity: Math.max(0.4, 0.85 - index * 0.08),
+                            }}
+                          />
+                        </span>
+                        <span className="data-breakdown-percent">{formatShare(detail.bytes, totalBytes)}%</span>
+                        <span className="data-breakdown-bytes">{formatBytes(detail.bytes)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <p className="data-pie-breakdown-empty">这个分类没有更细的记录。</p>
+              )}
+            </section>
+          );
+        })}
       </div>
     </div>
   );
