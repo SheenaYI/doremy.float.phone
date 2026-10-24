@@ -297,6 +297,10 @@ export function normalizeMemoryConfig(config: MemoryConfig): MemoryConfig {
         coreMemoryRoomFilterEnabled: config.coreMemoryRoomFilterEnabled === true,
         coreMemoryRooms: normalizeRoomList(config.coreMemoryRooms, MEMORY_ROOMS),
         reclassifySkipManual: config.reclassifySkipManual !== false,
+        shortTermAllowedSources: {
+            ...DEFAULT_MEMORY_CONFIG.shortTermAllowedSources,
+            ...(config.shortTermAllowedSources ?? {}),
+        },
     };
 }
 

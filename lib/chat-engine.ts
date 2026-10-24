@@ -74,8 +74,7 @@ import { formatCustomAppChatDirectivesForPrompt } from "./custom-app-chat-direct
 import { loadAllTracks } from "./music-storage";
 import { getActiveAppTags } from "./content-tag-utils";
 import { isNeteaseConfigured, getUserPlaylists, getPlaylistTracks, checkLoginStatus, loadMusicApiConfig } from "./music-service";
-import { buildCalendarScheduleMarker, getCurrentCalendarScheduleForPrompt } from "./calendar-storage";
-import { getWeekStartIso } from "./calendar-utils";
+import { buildChatCalendarContext, getCurrentCalendarScheduleForPrompt } from "./calendar-storage";
 import { buildCharacterTimeContext } from "./character-time";
 import { getPromptTimestampOptionsForTimeContext } from "./prompt-time";
 import { kvGet, kvSet, registerKvMigration } from "./kv-db";
@@ -1901,7 +1900,7 @@ export async function buildChatPromptMessages(
 
     const longTermMemories = memResults ? formatLongTermMemories(memResults, { groupByRoom: memConfig.roomEnabled }) : "";
     const coreMemories = coreResults ? formatCoreMemories(coreResults) : "";
-    const scheduleSummary = buildCalendarScheduleMarker("character", character.id, getWeekStartIso(now));
+    const scheduleSummary = buildChatCalendarContext("character", character.id, now);
     const currentSchedule = getCurrentCalendarScheduleForPrompt("character", character.id, now);
     const musicOnlineHint = isNeteaseConfigured() ? "- 你可以推荐任何歌曲，系统会在线搜索并播放。不局限于用户本地音乐库。\n" : "\n";
     const pluginPrompt = await runChatPluginTransform("prompt.system", {

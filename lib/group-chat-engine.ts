@@ -40,8 +40,7 @@ import {
 } from "./chat-engine";
 import type { CustomAppPromptProfile } from "./custom-app-types";
 import { isNeteaseConfigured } from "./music-service";
-import { buildCalendarScheduleMarker, getCurrentCalendarScheduleForPrompt } from "./calendar-storage";
-import { getWeekStartIso } from "./calendar-utils";
+import { buildChatCalendarContext, getCurrentCalendarScheduleForPrompt } from "./calendar-storage";
 import {
     resolveBinding,
     loadBindingConfig,
@@ -339,7 +338,7 @@ async function buildGroupChatPromptMessages(
         if (!character) return null;
         const memberTimeContext = buildCharacterTimeContext(character.timeZone, now);
         memberTimeContexts[charId] = memberTimeContext;
-        const scheduleSummary = buildCalendarScheduleMarker("character", charId, getWeekStartIso(now));
+        const scheduleSummary = buildChatCalendarContext("character", charId, now);
         const currentSchedule = getCurrentCalendarScheduleForPrompt("character", charId, now);
         const charSlot = resolveBinding(bindings, charId, "group_chat");
         const worldBooks = promptProfile?.enableWorldBooks === false

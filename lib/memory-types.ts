@@ -49,6 +49,7 @@ export type MemoryConfig = {
         moments?: boolean;
         checkphone?: boolean;
         diary?: boolean;
+        calendar?: boolean;
         xiaohongshu?: boolean;
         interview_magazine?: boolean;
         cocreate?: boolean;
@@ -238,6 +239,7 @@ export const DEFAULT_MEMORY_CONFIG: MemoryConfig = {
         moments: true,
         checkphone: true,
         diary: true,
+        calendar: true,
         xiaohongshu: true,
         interview_magazine: true,
         cocreate: true,

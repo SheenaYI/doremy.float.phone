@@ -103,6 +103,7 @@ const MEMORY_SOURCE_OPTIONS: Array<{ key: MemorySourceKey; label: string }> = [
     { key: "moments", label: "朋友圈" },
     { key: "checkphone", label: "查手机" },
     { key: "diary", label: "手记便签" },
+    { key: "calendar", label: "日历经历" },
     { key: "xiaohongshu", label: "小红书" },
     { key: "interview_magazine", label: "在场访谈" },
     { key: "cocreate", label: "共创" },

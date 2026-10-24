@@ -17,6 +17,8 @@ import { loadVnProjectionEntries } from "./vn-storage";
 import { loadMapProjectionEntries, loadMapSharedProjectionEntries } from "./map-storage";
 import { loadGameProjectionEntries } from "./game-storage";
 import { loadDiaryEntries } from "./diary-entry-storage";
+import { loadCalendarDayRecords } from "./calendar-day-storage";
+import { getCalendarDailyMoodMeta, type CalendarDayRecord } from "./calendar-day-types";
 import type { DiaryEntry, DiaryEntryBlock } from "./diary-entry-types";
 import { loadNoteWallProjectionEntries } from "./notewall-memory";
 import { loadXiaohongshuProjectionEntries } from "./xiaohongshu-memory";
@@ -51,8 +53,8 @@ function formatPhotoDirectiveForPrompt(msg: ChatMessage): string {
 
 export type NativeTimelineEntry = {
     id: string;
-    sourceApp: "chat" | "moments" | "story" | "vn" | "map" | "game" | "diary" | "xiaohongshu" | "interview_magazine" | "cocreate" | "checkphone" | "custom_app";
-    sourceDetail?: "direct" | "group" | "system" | "story" | "chat_offline" | "game" | "diary_entry" | "notewall" | "xiaohongshu" | "black_market_theater" | "interview_issue" | "interview_shared_issue" | "cocreate_project" | "checkphone" | "custom_app_event"; // chat sub-type: 1:1 vs group chat vs system note
+    sourceApp: "chat" | "moments" | "story" | "vn" | "map" | "game" | "diary" | "calendar" | "xiaohongshu" | "interview_magazine" | "cocreate" | "checkphone" | "custom_app";
+    sourceDetail?: "direct" | "group" | "system" | "story" | "chat_offline" | "game" | "diary_entry" | "notewall" | "calendar_day" | "xiaohongshu" | "black_market_theater" | "interview_issue" | "interview_shared_issue" | "cocreate_project" | "checkphone" | "custom_app_event"; // chat sub-type: 1:1 vs group chat vs system note
     authorType?: "user" | "character" | "npc"; // who authored this entry
     postAuthorType?: "user" | "character"; // for moments: who owns the parent post
     sessionId?: string;
@@ -128,14 +130,32 @@ function clipTimelineText(value: string, maxLength: number): string {
 }
 
 function formatDiaryBlockForTimeline(block: DiaryEntryBlock): string {
-    if (block.type === "paragraph" || block.type === "quote") return block.text;
+    if (block.type === "paragraph" || block.type === "quote" || block.type === "highlight" || block.type === "bold" || block.type === "italic") return block.text;
     if (block.type === "correction") return block.replacement || block.text;
     if (block.type === "image") return block.caption || block.description;
+    if (block.type === "list") return [block.title, block.items.join(" / ")].filter(Boolean).join(" ");
     if (block.type === "todo") return [
         block.title,
         block.items.map(item => `${item.done ? "完成" : "待办"}:${item.text}`).join(" / "),
     ].filter(Boolean).join(" ");
     return "";
+}
+
+function formatCalendarDayForTimeline(record: CalendarDayRecord, timeAware: boolean, timestampOptions?: PromptTimestampOptions): string {
+    const mood = getCalendarDailyMoodMeta(record.mood);
+    const experiences = record.experiences
+        .slice(0, 6)
+        .map(item => item.title)
+        .filter(Boolean)
+        .join("、");
+    const summary = clipTimelineText(record.summary, 260);
+    const parts = [
+        mood ? `心情${mood.emoji}${mood.label}` : "",
+        record.keywords.length ? `关键词：${record.keywords.join(" / ")}` : "",
+        experiences ? `经历：${experiences}` : "",
+        summary ? `小结：${summary}` : "",
+    ].filter(Boolean).join("；");
+    return `${formatPromptEventLabel("日历", `${record.date}T21:00:00`, timeAware, timestampOptions)} ${parts}`;
 }
 
 function formatDiaryEntryForTimeline(entry: DiaryEntry, timeAware: boolean, timestampOptions?: PromptTimestampOptions): string {
@@ -663,6 +683,24 @@ export function loadNativeTimeline(
         });
     }
 
+    // ── Calendar day summaries (only user-confirmed days, one entry per day) ──
+    const calendarDays = loadCalendarDayRecords("character", characterId)
+        .filter(record =>
+            record.confirmedAt
+            && (!options?.afterTimestamp || record.confirmedAt > options.afterTimestamp)
+        )
+        .slice(-14);
+    for (const day of calendarDays) {
+        entries.push({
+            id: `calendar_day_${characterId}_${day.date}`,
+            sourceApp: "calendar",
+            sourceDetail: "calendar_day",
+            authorType: "character",
+            timestamp: day.confirmedAt || `${day.date}T21:00:00`,
+            content: formatCalendarDayForTimeline(day, timeAware, timestampOptions),
+        });
+    }
+
     // ── Note wall projections ──
     const noteWallEntries = loadNoteWallProjectionEntries(characterId, {
         afterTimestamp: options?.afterTimestamp,
@@ -795,7 +833,7 @@ export function loadNativeTimeline(
 }
 
 // Fixed order — lower = further from LLM output (appears higher in prompt)
-const FEATURE_ORDER: Record<string, number> = { map: 0, game: 0.5, moments: 1, xiaohongshu: 1.5, checkphone: 1.7, story: 2, vn: 2, theater: 2.2, interview: 2.35, cocreate: 2.4, diary_entry: 2.45, notewall: 2.5, custom_app: 2.6, group_chat: 3, chat: 4 };
+const FEATURE_ORDER: Record<string, number> = { map: 0, game: 0.5, moments: 1, xiaohongshu: 1.5, checkphone: 1.7, story: 2, vn: 2, theater: 2.2, interview: 2.35, cocreate: 2.4, diary_entry: 2.45, calendar_day: 2.47, notewall: 2.5, custom_app: 2.6, group_chat: 3, chat: 4 };
 // Map appId → XML tag name for the "current feature" wrapper
 const FEATURE_TAG: Record<string, string> = {
     chat: "recent_chat",
@@ -1012,6 +1050,11 @@ export function prepareShortTermContext(
     const diaryEntries = timeline.filter(e => e.sourceApp === "diary" && e.sourceDetail === "diary_entry");
     if (diaryEntries.length > 0) {
         raw.push({ tag: "recent_diary", order: FEATURE_ORDER.diary_entry, entries: diaryEntries });
+    }
+
+    const calendarDayEntries = timeline.filter(e => e.sourceApp === "calendar" && e.sourceDetail === "calendar_day");
+    if (calendarDayEntries.length > 0) {
+        raw.push({ tag: "recent_calendar", order: FEATURE_ORDER.calendar_day, entries: calendarDayEntries });
     }
 
     const noteWallEntries = timeline.filter(e => e.sourceApp === "diary" && e.sourceDetail === "notewall");
@@ -1270,6 +1313,11 @@ export function prepareGroupShortTermContext(
     const diaryEntries = timeline.filter(e => e.sourceApp === "diary" && e.sourceDetail === "diary_entry");
     if (diaryEntries.length > 0) {
         raw.push({ tag: "recent_diary", order: FEATURE_ORDER.diary_entry, entries: diaryEntries });
+    }
+
+    const calendarDayEntries = timeline.filter(e => e.sourceApp === "calendar" && e.sourceDetail === "calendar_day");
+    if (calendarDayEntries.length > 0) {
+        raw.push({ tag: "recent_calendar", order: FEATURE_ORDER.calendar_day, entries: calendarDayEntries });
     }
 
     const noteWallEntries = timeline.filter(e => e.sourceApp === "diary" && e.sourceDetail === "notewall");

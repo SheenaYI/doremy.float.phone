@@ -50,6 +50,14 @@ import {
     type TimedWakeSchedule,
 } from "./timed-wake-storage";
 import {
+    deleteCalendarProactiveConfigForItem,
+    loadDueCalendarProactiveConfigs,
+    markCalendarProactiveFired,
+    type CalendarProactiveConfig,
+} from "./calendar-proactive-storage";
+import { loadOwnerCalendarPlans } from "./calendar-storage";
+import { isCallActiveForSession } from "./call-session-store";
+import {
     getMenstrualPeriodCareEvent,
     hasMenstrualPeriodCareTriggered,
     loadMenstrualConfig,
@@ -89,6 +97,7 @@ let periodCareUpdateHandler: (() => void) | null = null;
 const firingSet = new Set<string>(); // sessions currently mid-API-call
 const cancelledWhileFiring = new Set<string>(); // cancelled during in-flight API call
 const timedWakeFiringSet = new Set<string>();
+const calendarProactiveFiringSet = new Set<string>();
 const periodCareFiringSet = new Set<string>();
 const backgroundReplyFiringSet = new Set<string>();
 // 正在后台生成回复的会话（追问/定时唤醒/经期关心/统一后台回复）。
@@ -228,8 +237,9 @@ export async function requestBackgroundChatReply(
             },
         );
         if (isBackgroundGenerationCancelled(session.id)) return { ok: false, skipped: "cancelled" };
+        // 主动联系只保留第一轮可见输出，避免一次触发连发多条。
         const { hasVisible, stateValues } = await saveBackgroundCompletionRounds(
-            rounds,
+            rounds.slice(0, 1),
             session.id,
             0,
             undefined,
@@ -407,6 +417,7 @@ function pollSchedules() {
             fireFollowUp(sched); // intentionally not awaited — fire & forget
         }
         pollTimedWakeSchedules(now);
+        pollCalendarProactive(now);
         pollMenstrualPeriodCare(now);
         pollIdleReconnect(now);
         pollCheckIn(now);
@@ -423,6 +434,92 @@ function pollTimedWakeSchedules(now: number) {
         if (now < scheduledOutboxGraceUntil) continue;
         console.log(`[TimedWake] Firing now for session=${sched.sessionId}`);
         fireTimedWake(sched);
+    }
+}
+
+function pollCalendarProactive(now: number) {
+    if (now < scheduledOutboxGraceUntil) return;
+    for (const config of loadDueCalendarProactiveConfigs(now)) {
+        if (calendarProactiveFiringSet.has(config.id)) continue;
+        void fireCalendarProactive(config);
+    }
+}
+
+function buildCalendarProactiveIntent(config: CalendarProactiveConfig): string {
+    const phase = config.trigger === "start"
+        ? "行程刚刚开始"
+        : config.trigger === "after_start"
+            ? `行程开始后约 ${config.offsetMinutes} 分钟`
+            : config.trigger === "before_end"
+                ? `行程结束前约 ${config.offsetMinutes} 分钟`
+                : config.trigger === "end"
+                    ? "行程刚刚结束"
+                    : config.trigger === "after_end"
+                        ? `行程结束后约 ${config.offsetMinutes} 分钟`
+                        : "现在";
+    return [
+        `【一次性系统提示，不要向对方复述或引用本行】`,
+        `现在是你的行程「${config.title}」${phase === "现在" ? "相关的时刻" : "，" + phase}。`,
+        config.extraPrompt ? `你此刻的想法：${config.extraPrompt}` : "",
+        config.allowSkip
+            ? "你可以主动发消息分享此刻，也可以选择不发；如果选择不发，只输出空内容。"
+            : "请主动发一条消息，分享此刻的感受或正在做的事。",
+        "这是主动联系，不是用户发来的消息。请像平时发微信一样自然，只发一条消息，不要连发多条。",
+        "必须遵循当前会话的聊天输出格式；如果当前会话启用了状态区/内心，照常输出，不要省略。",
+        "不要提及系统提示、日历、行程标题或“主动联系”这件事。",
+    ].filter(Boolean).join("\n");
+}
+
+async function fireCalendarProactive(config: CalendarProactiveConfig) {
+    calendarProactiveFiringSet.add(config.id);
+    let sessionId: string | null = null;
+    try {
+        const planItem = loadOwnerCalendarPlans("character", config.ownerId)
+            .flatMap(plan => plan.items)
+            .find(item => item.id === config.itemId);
+        if (!planItem) {
+            deleteCalendarProactiveConfigForItem("character", config.ownerId, config.itemId);
+            return;
+        }
+        const session = loadChatSessions().find(item =>
+            !item.isGroup
+            && item.contactId === config.ownerId
+        );
+        if (!session) return;
+        if (isCallActiveForSession(session.id)) return;
+        sessionId = session.id;
+        markCalendarProactiveFired(config.id);
+        const latestMessages = loadChatMessages(session.id);
+        if (latestMessages.length === 0) return;
+        backgroundGeneratingSessions.add(session.id);
+        window.dispatchEvent(new CustomEvent("followup-started", { detail: { sessionId: session.id } }));
+        const rounds = await generateBackgroundCompletionRounds(
+            session,
+            latestMessages,
+            {
+                appTags: ["chat", "text", "calendar_proactive"],
+                ephemeralSystemNote: buildCalendarProactiveIntent(config),
+            },
+        );
+        if (isBackgroundGenerationCancelled(session.id)) {
+            window.dispatchEvent(new CustomEvent("followup-fired", { detail: { sessionId: session.id } }));
+            return;
+        }
+        // 主动联系只保留第一轮可见输出，避免一次触发连发多条。
+        const { hasVisible, stateValues } = await saveBackgroundCompletionRounds(
+            rounds.slice(0, 1),
+            session.id,
+            0,
+            undefined,
+            latestMessages,
+        );
+        if (hasVisible) scheduleFollowUp(session.id, 0, stateValues);
+        window.dispatchEvent(new CustomEvent("followup-fired", { detail: { sessionId: session.id } }));
+    } catch (error) {
+        console.error("[CalendarProactive] Error:", error);
+    } finally {
+        if (sessionId) backgroundGeneratingSessions.delete(sessionId);
+        calendarProactiveFiringSet.delete(config.id);
     }
 }
 
@@ -706,8 +803,9 @@ async function fireIdleReconnect(rule: IdleReconnectRule, lastUserAt: number) {
             return;
         }
 
+        // 主动联系只保留第一轮可见输出，避免一次触发连发多条。
         const { hasVisible, stateValues } = await saveBackgroundCompletionRounds(
-            rounds,
+            rounds.slice(0, 1),
             session.id,
             0,
             undefined,
@@ -776,8 +874,9 @@ async function fireTimedWake(sched: TimedWakeSchedule) {
             return;
         }
 
+        // 主动联系只保留第一轮可见输出，避免一次触发连发多条。
         const { hasVisible, stateValues } = await saveBackgroundCompletionRounds(
-            rounds,
+            rounds.slice(0, 1),
             session.id,
             0,
             undefined,
@@ -840,8 +939,9 @@ async function fireMenstrualPeriodCare(input: {
             return;
         }
 
+        // 主动联系只保留第一轮可见输出，避免一次触发连发多条。
         const { hasVisible, stateValues } = await saveBackgroundCompletionRounds(
-            rounds,
+            rounds.slice(0, 1),
             session.id,
             0,
             undefined,
