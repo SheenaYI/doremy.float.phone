@@ -12,6 +12,7 @@ import type { CalendarOwnerType, CalendarScheduleItem, CalendarWeekPlan } from "
 import {
   CALENDAR_DAYS_PER_PAGE_OPTIONS,
   CALENDAR_THEME_IDS,
+  applyGeneratedScheduleRange,
   deleteCalendarScheduleItem,
   loadCalendarConfig,
   loadOwnerCalendarPlans,
@@ -47,6 +48,31 @@ import {
 import { CalendarMonthPage } from "./calendar/month-page";
 import { CalendarDetailPage } from "./calendar/detail-page";
 import { CalendarEventEditModal, type CalendarEventDraft } from "./calendar/event-edit-modal";
+import { CalendarReviewPage } from "./calendar/review-page";
+import { CalendarGeneratePage } from "./calendar/generate-page";
+import { type CalendarViewTab } from "./calendar/view-tabs";
+import {
+  deleteCalendarExperience,
+  loadCalendarDayRecords,
+  loadCalendarTagConfig,
+  saveCalendarDayReview,
+  updateCalendarDayMood,
+  upsertCalendarExperience,
+} from "@/lib/calendar-day-storage";
+import type {
+  CalendarDailyMood,
+  CalendarDayRecord,
+  CalendarExperience,
+  CalendarTagConfig,
+} from "@/lib/calendar-day-types";
+import type { CalendarDayReviewDraft } from "@/lib/calendar-day-engine";
+import { computeCalendarWeekStats } from "@/lib/calendar-stats";
+import { deleteCalendarProactiveConfigForItem } from "@/lib/calendar-proactive-storage";
+import {
+  loadCalendarHolidayConfig,
+  loadCalendarHolidayMarks,
+  type CalendarHolidayConfig,
+} from "@/lib/calendar-holiday-storage";
 
 type OwnerOption = {
   key: string;
@@ -134,10 +160,14 @@ export function PhoneCalendarApp({
   const todayIso = formatIsoDate(new Date());
   const [owners, setOwners] = useState<OwnerOption[]>(() => buildOwnerOptions());
   const [selectedKey, setSelectedKey] = useState<string>(() => owners[0]?.key ?? "user:me");
-  const [view, setView] = useState<"month" | "detail">("month");
+  const [view, setView] = useState<"month" | "detail" | "review" | "generate">("month");
   const [selectedDate, setSelectedDate] = useState<string>(todayIso);
   const [detailKey, setDetailKey] = useState(0);
   const [ownerPlans, setOwnerPlans] = useState<CalendarWeekPlan[]>([]);
+  const [dayRecords, setDayRecords] = useState<CalendarDayRecord[]>([]);
+  const [tagConfig, setTagConfig] = useState<CalendarTagConfig>(() => loadCalendarTagConfig());
+  const [holidayConfig, setHolidayConfig] = useState<CalendarHolidayConfig>(() => loadCalendarHolidayConfig());
+  const [holidayMarks, setHolidayMarks] = useState<Map<string, string[]>>(new Map());
   const [config, setConfig] = useState(() => loadCalendarConfig());
   const [menstrualConfig, setMenstrualConfig] = useState(() => loadMenstrualConfig());
   const [menstrualRecords, setMenstrualRecords] = useState<MenstrualRecord[]>(() => loadMenstrualRecords());
@@ -145,7 +175,6 @@ export function PhoneCalendarApp({
   const [showDaysPanel, setShowDaysPanel] = useState(false);
   const [showMenstrualSettings, setShowMenstrualSettings] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
-  const [showGenerateConfirm, setShowGenerateConfirm] = useState(false);
   const [showAutoConfirm, setShowAutoConfirm] = useState(false);
   const [fabMenuOpen, setFabMenuOpen] = useState(false);
   const autoAttemptedRef = useRef<Set<string>>(new Set());
@@ -241,20 +270,179 @@ export function PhoneCalendarApp({
     setOwnerPlans(loadOwnerCalendarPlans(selectedOwner.ownerType, selectedOwner.ownerId));
   };
 
+  const refreshDayRecords = () => {
+    if (!selectedOwner) return;
+    setDayRecords(loadCalendarDayRecords(selectedOwner.ownerType, selectedOwner.ownerId));
+  };
+
   useEffect(() => {
     if (!selectedOwner) return;
     setOwnerPlans(loadOwnerCalendarPlans(selectedOwner.ownerType, selectedOwner.ownerId));
+    setDayRecords(loadCalendarDayRecords(selectedOwner.ownerType, selectedOwner.ownerId));
   }, [selectedOwner]);
+
+  const dayRecordByDate = useMemo(() => {
+    const map = new Map<string, CalendarDayRecord>();
+    for (const record of dayRecords) map.set(record.date, record);
+    return map;
+  }, [dayRecords]);
+
+  const selectedDayRecord = useMemo(
+    () => dayRecordByDate.get(selectedDate) ?? null,
+    [dayRecordByDate, selectedDate],
+  );
+
+  const weekStats = useMemo(
+    () => computeCalendarWeekStats({
+      ownerType: selectedOwner?.ownerType ?? "user",
+      ownerId: selectedOwner?.ownerId ?? "self",
+      weekStart,
+      plans: ownerPlans,
+      dayRecords,
+    }),
+    [selectedOwner, weekStart, ownerPlans, dayRecords],
+  );
 
   // 聊天/工具调用改动日程后刷新
   useEffect(() => {
     const handler = () => {
       if (!selectedOwner) return;
       setOwnerPlans(loadOwnerCalendarPlans(selectedOwner.ownerType, selectedOwner.ownerId));
+      setDayRecords(loadCalendarDayRecords(selectedOwner.ownerType, selectedOwner.ownerId));
+      setTagConfig(loadCalendarTagConfig());
     };
     window.addEventListener("calendar-updated", handler);
-    return () => window.removeEventListener("calendar-updated", handler);
+    window.addEventListener("calendar-day-updated", handler);
+    return () => {
+      window.removeEventListener("calendar-updated", handler);
+      window.removeEventListener("calendar-day-updated", handler);
+    };
   }, [selectedOwner]);
+
+  useEffect(() => {
+    const handler = () => setHolidayConfig(loadCalendarHolidayConfig());
+    window.addEventListener("calendar-holiday-updated", handler);
+    return () => window.removeEventListener("calendar-holiday-updated", handler);
+  }, []);
+
+  useEffect(() => {
+    if (!holidayConfig.enabled || holidayConfig.countries.length === 0) {
+      setHolidayMarks(new Map());
+      return;
+    }
+    let cancelled = false;
+    const year = new Date().getFullYear();
+    const years = [year, year - 1, year + 1];
+    const merged = new Map<string, string[]>();
+    const loadYears = async (force = false) => {
+      // 先加载当前年，立刻渲染；前后年再逐年后台补齐，避免一个慢请求卡住整张月历。
+      if (force) {
+        merged.clear();
+        setHolidayMarks(new Map());
+      }
+      for (const targetYear of years) {
+        const map = await loadCalendarHolidayMarks(holidayConfig.countries, [targetYear], force).catch(() => new Map<string, string[]>());
+        if (cancelled) return;
+        for (const [date, labels] of map) {
+          merged.set(date, Array.from(new Set([...(merged.get(date) ?? []), ...labels])).slice(0, 4));
+        }
+        setHolidayMarks(new Map(merged));
+      }
+    };
+    void loadYears();
+    const refresh = () => { void loadYears(true); };
+    window.addEventListener("calendar-holiday-refresh", refresh);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("calendar-holiday-refresh", refresh);
+    };
+  }, [holidayConfig]);
+
+  const dispatchDayUpdated = () => {
+    if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("calendar-day-updated"));
+  };
+
+  const handleSaveMood = (mood: CalendarDailyMood | null) => {
+    if (!selectedOwner) return;
+    updateCalendarDayMood(selectedOwner.ownerType, selectedOwner.ownerId, selectedDate, mood);
+    refreshDayRecords();
+    dispatchDayUpdated();
+  };
+
+  const handleSaveDailySummary = (input: { keywords: string[]; summary: string }) => {
+    if (!selectedOwner) return;
+    saveCalendarDayReview({
+      ownerType: selectedOwner.ownerType,
+      ownerId: selectedOwner.ownerId,
+      date: selectedDate,
+      keywords: input.keywords,
+      summary: input.summary,
+      confirm: true,
+    });
+    refreshDayRecords();
+    dispatchDayUpdated();
+  };
+
+  const handleSaveExperience = (experience: CalendarExperience) => {
+    if (!selectedOwner) return;
+    upsertCalendarExperience(selectedOwner.ownerType, selectedOwner.ownerId, experience);
+    refreshDayRecords();
+    dispatchDayUpdated();
+  };
+
+  const handleDeleteExperience = (experience: CalendarExperience) => {
+    if (!selectedOwner) return;
+    deleteCalendarExperience(selectedOwner.ownerType, selectedOwner.ownerId, experience.date, experience.id);
+    refreshDayRecords();
+    dispatchDayUpdated();
+  };
+
+  const handleApplyWeeklyPreview = (items: CalendarScheduleItem[], startDate: string, endDate: string) => {
+    if (!selectedOwner || items.length === 0) return;
+    applyGeneratedScheduleRange(selectedOwner.ownerType, selectedOwner.ownerId, startDate, endDate, items);
+    refreshPlans();
+    onNotice?.(`已保存 ${items.length} 条日程`);
+  };
+
+  const handleApplyDayReviewForDate = (date: string, review: CalendarDayReviewDraft) => {
+    if (!selectedOwner) return;
+    const record = dayRecordByDate.get(date);
+    const existing = record?.experiences ?? [];
+    const merged = [...existing];
+    for (const experience of review.experiences) {
+      const linkedIndex = experience.linkedScheduleId
+        ? merged.findIndex(item => item.linkedScheduleId === experience.linkedScheduleId)
+        : -1;
+      if (linkedIndex >= 0) {
+        merged[linkedIndex] = experience;
+        continue;
+      }
+      const duplicate = !experience.linkedScheduleId && merged.some(item =>
+        item.kind === "extra"
+        && item.date === experience.date
+        && item.title === experience.title
+        && item.startTime === experience.startTime
+      );
+      if (!duplicate) merged.push(experience);
+    }
+    saveCalendarDayReview({
+      ownerType: selectedOwner.ownerType,
+      ownerId: selectedOwner.ownerId,
+      date,
+      mood: review.mood ?? record?.mood ?? null,
+      keywords: review.keywords,
+      summary: review.summary,
+      experiences: merged,
+      confirm: true,
+    });
+    refreshDayRecords();
+    dispatchDayUpdated();
+  };
+
+  const handleApplyDayReview = (review: CalendarDayReviewDraft) => {
+    handleApplyDayReviewForDate(selectedDate, review);
+    onNotice?.("今日回顾已保存");
+  };
 
   // 每周自动生成（仅角色）
   useEffect(() => {
@@ -331,6 +519,7 @@ export function PhoneCalendarApp({
       const originalWeekStart = getWeekStartIso(parseIsoDate(editingItem.originalDate));
       if (originalWeekStart !== firstWeekStart) {
         deleteCalendarScheduleItem(selectedOwner.ownerType, selectedOwner.ownerId, originalWeekStart, editingItem.id);
+        deleteCalendarProactiveConfigForItem(selectedOwner.ownerType, selectedOwner.ownerId, editingItem.id);
       }
     }
     // 多天：第一天沿用原 id（编辑场景），其余每天各生成一条独立日程
@@ -338,7 +527,7 @@ export function PhoneCalendarApp({
       const day = parseIsoDate(startDate);
       day.setDate(day.getDate() + offset);
       const dayIso = formatIsoDate(day);
-      upsertCalendarScheduleItem(selectedOwner.ownerType, selectedOwner.ownerId, getWeekStartIso(parseIsoDate(dayIso)), {
+      const plan = upsertCalendarScheduleItem(selectedOwner.ownerType, selectedOwner.ownerId, getWeekStartIso(parseIsoDate(dayIso)), {
         id: offset === 0 ? editingItem.id : undefined,
         date: dayIso,
         startTime: editingItem.startTime,
@@ -359,23 +548,10 @@ export function PhoneCalendarApp({
     if (!selectedOwner || !editingItem?.id) return;
     const targetWeekStart = getWeekStartIso(parseIsoDate(editingItem.originalDate || editingItem.date));
     deleteCalendarScheduleItem(selectedOwner.ownerType, selectedOwner.ownerId, targetWeekStart, editingItem.id);
+    deleteCalendarProactiveConfigForItem(selectedOwner.ownerType, selectedOwner.ownerId, editingItem.id);
     setEditingItem(null);
     refreshPlans();
     onNotice?.("日程已删除");
-  };
-
-  const handleGenerate = async () => {
-    if (!selectedOwner || isGenerating || selectedOwner.ownerType !== "character") return;
-    setShowGenerateConfirm(false);
-    setIsGenerating(true);
-    const result = await generateWeeklyCalendarSchedule(selectedOwner.ownerType, selectedOwner.ownerId, weekStart);
-    setIsGenerating(false);
-    if (!result.success) {
-      onNotice?.(result.error || "生成失败");
-      return;
-    }
-    refreshPlans();
-    onNotice?.("本周日程已生成");
   };
 
   // ── 经期 ──
@@ -521,6 +697,21 @@ export function PhoneCalendarApp({
     setView("detail");
   };
 
+  const activeTab: CalendarViewTab = view === "review"
+    ? "review"
+    : view === "generate"
+      ? "generate"
+      : "schedule";
+
+  const handleTabChange = (tab: CalendarViewTab) => {
+    setFabMenuOpen(false);
+    if (tab === "schedule") {
+      if (view !== "detail") setView("month");
+      return;
+    }
+    setView(tab);
+  };
+
   return (
     <div className="calendar-app-shell" data-calendar-theme={config.theme}>
       {appliedCalendarCss && <SessionCustomCSS css={appliedCalendarCss} scope=".calendar-app-shell" />}
@@ -529,13 +720,17 @@ export function PhoneCalendarApp({
           <CalendarMonthPage
             todayIso={todayIso}
             itemsByDate={itemsByDate}
+            dayRecordByDate={dayRecordByDate}
+            holidayMap={holidayMarks}
             cycleMap={cycleMap}
             ownerStrip={ownerStrip}
+            activeTab={activeTab}
+            onTabChange={handleTabChange}
             onPickDay={openDetail}
             onClose={onClose}
             onOpenTheme={() => setShowThemePanel(true)}
           />
-        ) : (
+        ) : view === "detail" ? (
           <CalendarDetailPage
             key={detailKey}
             initialDate={selectedDate}
@@ -549,11 +744,54 @@ export function PhoneCalendarApp({
             onBack={() => setView("month")}
             onSelectedChange={setSelectedDate}
             onEditItem={openEditItem}
+            activeTab={activeTab}
+            onTabChange={handleTabChange}
+          />
+        ) : view === "review" ? (
+          <CalendarReviewPage
+            selectedDate={selectedDate}
+            todayIso={todayIso}
+            ownerType={selectedOwner?.ownerType ?? "user"}
+            ownerId={selectedOwner?.ownerId ?? "self"}
+            scheduleItems={itemsByDate.get(selectedDate) ?? []}
+            dayRecord={selectedDayRecord}
+            tagConfig={tagConfig}
+            holidayMap={holidayMarks}
+            weekStats={weekStats}
+            ownerStrip={ownerStrip}
+            activeTab={activeTab}
+            onTabChange={handleTabChange}
+            onBack={() => setView("month")}
+            onChangeDate={setSelectedDate}
+            onSaveMood={handleSaveMood}
+            onSaveSummary={handleSaveDailySummary}
+            onSaveExperience={handleSaveExperience}
+            onDeleteExperience={handleDeleteExperience}
+            onNotice={onNotice}
+          />
+        ) : (
+          <CalendarGeneratePage
+            selectedDate={selectedDate}
+            ownerName={selectedOwner?.name ?? "我"}
+            ownerType={selectedOwner?.ownerType ?? "user"}
+            ownerId={selectedOwner?.ownerId ?? "self"}
+            isCharacter={selectedOwner?.ownerType === "character"}
+            ownerStrip={ownerStrip}
+            activeTab={activeTab}
+            onTabChange={handleTabChange}
+            onBack={() => setView("month")}
+            onApplyWeekly={handleApplyWeeklyPreview}
+            onApplyDayReview={handleApplyDayReview}
+            onApplyDayReviewForDate={handleApplyDayReviewForDate}
+            onOpenReview={() => setView("review")}
+            onNotice={onNotice}
           />
         )}
 
-        {fabMenuOpen ? <div className="calendar-fab-backdrop" onClick={() => setFabMenuOpen(false)} /> : null}
-        <div className="calendar-fab-stack">
+        {view === "month" || view === "detail" ? (
+          <>
+            {fabMenuOpen ? <div className="calendar-fab-backdrop" onClick={() => setFabMenuOpen(false)} /> : null}
+            <div className="calendar-fab-stack">
           {fabMenuOpen && selectedOwner?.ownerType === "character" ? (
             <div className="calendar-fab-menu" role="menu">
               <button
@@ -573,7 +811,7 @@ export function PhoneCalendarApp({
                 disabled={isGenerating}
                 onClick={() => {
                   setFabMenuOpen(false);
-                  setShowGenerateConfirm(true);
+                  setView("generate");
                 }}
               >
                 <Wand2 size={15} />
@@ -611,6 +849,8 @@ export function PhoneCalendarApp({
             <Plus size={20} style={{ transform: fabMenuOpen ? "rotate(45deg)" : undefined, transition: "transform 0.2s" }} />
           </button>
         </div>
+          </>
+        ) : null}
       </div>
 
       {showThemePanel && (
@@ -860,31 +1100,6 @@ export function PhoneCalendarApp({
         </div>
       )}
 
-      {showGenerateConfirm && selectedOwner && (
-        <div className="modal-overlay calendar-edit-modal-overlay" onClick={() => setShowGenerateConfirm(false)}>
-          <div className="calendar-edit-modal calendar-confirm-dialog" onClick={e => e.stopPropagation()}>
-            <Wand2 size={26} className="calendar-confirm-icon" />
-            <div className="calendar-confirm-title">确认生成日程？</div>
-            <div className="calendar-confirm-desc">
-              将为 <strong>{selectedOwner.name}</strong> 生成一周日程并覆盖当前已有 AI 安排（手动添加的保留）
-            </div>
-            <div className="calendar-confirm-footer">
-              <button type="button" className="calendar-block-btn" data-variant="ghost" onClick={() => setShowGenerateConfirm(false)}>取消</button>
-              <button
-                type="button"
-                className="calendar-block-btn"
-                data-variant="primary"
-                data-loading={isGenerating ? "true" : undefined}
-                onClick={handleGenerate}
-                disabled={isGenerating}
-                aria-busy={isGenerating}
-              >
-                {isGenerating ? "生成中…" : "确认"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {showAutoConfirm && selectedOwner && (
         <div className="modal-overlay calendar-edit-modal-overlay" onClick={() => setShowAutoConfirm(false)}>

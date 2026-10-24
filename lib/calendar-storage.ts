@@ -8,6 +8,7 @@ import {
   isCalendarColorKey,
   isCalendarTimeRangeAllowed,
   normalizeTime,
+  parseIsoDate,
   pickScheduleColorKey,
   sanitizeScheduleEmoji,
   sortScheduleItems,
@@ -213,14 +214,16 @@ export function formatCalendarScheduleForPrompt(
   ownerType: CalendarOwnerType,
   ownerId: string,
   weekStart: string,
+  options?: { excludeGenerated?: boolean },
 ): string {
   const plan = loadCalendarWeekPlan(ownerType, ownerId, weekStart);
-  if (!plan || plan.items.length === 0) {
+  const sourceItems = (plan?.items ?? []).filter(item => !options?.excludeGenerated || item.source === "manual");
+  if (sourceItems.length === 0) {
     return "本周暂无明确日程安排。";
   }
 
   const grouped = new Map<string, CalendarScheduleItem[]>();
-  for (const item of plan.items) {
+  for (const item of sourceItems) {
     const arr = grouped.get(item.date) || [];
     arr.push(item);
     grouped.set(item.date, arr);
@@ -264,7 +267,49 @@ export function getCurrentCalendarScheduleForPrompt(
   });
 
   if (activeItems.length === 0) return "无";
-  return activeItems.map(formatCalendarScheduleItemForPrompt).join("；");
+  return activeItems.map(item =>
+    `${item.title}（${item.startTime}–${item.endTime}，进行中${item.location ? `，${item.location}` : ""}）`,
+  ).join("；");
+}
+
+/** 聊天室用的轻量日程上下文：当前 + 今天下一项，不注入整周。 */
+export function buildChatCalendarContext(
+  ownerType: CalendarOwnerType,
+  ownerId: string,
+  now = new Date(),
+): string {
+  const date = formatIsoDate(now);
+  const weekStart = getWeekStartIso(now);
+  const currentMinute = now.getHours() * 60 + now.getMinutes();
+  const plan = loadCalendarWeekPlan(ownerType, ownerId, weekStart);
+  const items = sortScheduleItems(plan?.items ?? []);
+  const todayItems = items.filter(item => item.date === date);
+  const current = todayItems.filter(item => {
+    const start = timeToMinutes(item.startTime);
+    const end = timeToMinutes(item.endTime);
+    return !Number.isNaN(start) && !Number.isNaN(end) && start <= currentMinute && currentMinute < end;
+  });
+  const nextToday = todayItems.find(item => {
+    const start = timeToMinutes(item.startTime);
+    return !Number.isNaN(start) && start > currentMinute;
+  });
+  const tomorrow = formatIsoDate(new Date(parseIsoDate(date).getTime() + 86400000));
+  const nextTomorrow = items.find(item => item.date === tomorrow);
+  const lines = [`当前时间：${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`];
+  lines.push(current.length > 0
+    ? `当前行程：${current.map(item => `${item.title}（${item.startTime}–${item.endTime}${item.location ? `，${item.location}` : ""}，进行中）`).join("；")}`
+    : "当前行程：无");
+  if (nextToday) {
+    lines.push(`下一行程：${nextToday.startTime}–${nextToday.endTime} ${nextToday.title}${nextToday.location ? `（${nextToday.location}）` : ""}`);
+  } else if (nextTomorrow) {
+    lines.push(`下一行程：明天 ${nextTomorrow.startTime}–${nextTomorrow.endTime} ${nextTomorrow.title}${nextTomorrow.location ? `（${nextTomorrow.location}）` : ""}`);
+  } else {
+    lines.push("下一行程：无");
+  }
+  if (current.length > 0) {
+    lines.push("说明：当前行程是计划安排；实际经历以短期记忆里的日历回顾为准。");
+  }
+  return lines.join("\n");
 }
 
 /**
@@ -304,12 +349,13 @@ export function buildCalendarScheduleMarker(
   ownerType: CalendarOwnerType,
   ownerId: string,
   weekStart: string,
+  options?: { excludeGenerated?: boolean },
 ): string {
   const ownerLabel = ownerType === "user" ? "用户" : "角色";
   return [
     `当前查看周起始日期：${weekStart}`,
     `${ownerLabel}本周日程：`,
-    formatCalendarScheduleForPrompt(ownerType, ownerId, weekStart),
+    formatCalendarScheduleForPrompt(ownerType, ownerId, weekStart, options),
   ].join("\n");
 }
 
@@ -367,6 +413,36 @@ export function cloneWeekPlanWithManualEdits(
     }
   }
   return replaceCalendarWeekItems(ownerType, ownerId, weekStart, nextItems);
+}
+
+/** 把一段日期范围内生成的行程按周落盘：保留范围外条目与范围内手动条目，只替换范围内的 AI 条目。 */
+export function applyGeneratedScheduleRange(
+  ownerType: CalendarOwnerType,
+  ownerId: string,
+  startDate: string,
+  endDate: string,
+  generatedItems: CalendarScheduleItem[],
+): void {
+  const weeks = new Set(generatedItems.map(item => getWeekStartIso(parseIsoDate(item.date))));
+  for (const weekStart of weeks) {
+    const existing = loadCalendarWeekPlan(ownerType, ownerId, weekStart);
+    const outside = (existing?.items ?? []).filter(item => item.date < startDate || item.date > endDate);
+    const manualInRange = (existing?.items ?? []).filter(item =>
+      item.date >= startDate && item.date <= endDate && item.source === "manual"
+    );
+    const generatedForWeek = generatedItems.filter(item => getWeekStartIso(parseIsoDate(item.date)) === weekStart);
+    const next = [...outside, ...generatedForWeek];
+    for (const manual of manualInRange) {
+      const collides = next.some(item =>
+        item.date === manual.date
+        && item.startTime === manual.startTime
+        && item.endTime === manual.endTime
+        && item.title === manual.title
+      );
+      if (!collides) next.push(manual);
+    }
+    replaceCalendarWeekItems(ownerType, ownerId, weekStart, sortScheduleItems(next));
+  }
 }
 
 export function validateScheduleDraft(item: {

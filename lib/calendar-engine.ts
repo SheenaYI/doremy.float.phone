@@ -20,15 +20,24 @@ import { formatCoreMemories, formatLongTermMemories } from "./memory-injector";
 import { prepareShortTermContext } from "./short-term-assembler";
 import { getCustomStickerExample, getCustomStickerNames } from "./custom-sticker-storage";
 import { previewMessagesForApi, sendLLMRequest, type ChatEngineError } from "./chat-engine";
-import { buildCalendarScheduleMarker, clearGeneratedWeekItems, cloneWeekPlanWithManualEdits, normalizeGeneratedScheduleItems, restoreCalendarWeekItems } from "./calendar-storage";
+import { applyGeneratedScheduleRange, buildCalendarScheduleMarker, cloneWeekPlanWithManualEdits, normalizeGeneratedScheduleItems } from "./calendar-storage";
 import {
+  formatIsoDate,
   getWeekDates,
   getWeekStartIso,
   getWeekdayLabel,
   isCalendarTimeRangeAllowed,
+  parseIsoDate,
   normalizeTime,
   sanitizeScheduleEmoji,
 } from "./calendar-utils";
+import {
+  CALENDAR_GENERATION_PRESETS,
+  buildArcPromptBlock,
+  getCalendarRatioLabel,
+  loadCalendarAiConfig,
+  type CalendarAiConfig,
+} from "./calendar-ai-config";
 
 type CalendarAssemblerResolved = {
   apiConfig: ApiConfig;
@@ -59,13 +68,36 @@ function buildSyntheticUserCharacter(identity: UserIdentity | null): Character {
   };
 }
 
-function buildCalendarTriggerInstruction(ownerName: string, weekDates: string[]): string {
-  return [
-    `请为${ownerName}生成 ${weekDates[0]} 到 ${weekDates[6]} 这一周的日程安排。`,
+function buildCalendarTriggerInstruction(
+  ownerName: string,
+  weekDates: string[],
+  options?: { config?: CalendarAiConfig; arcBlock?: string },
+): string {
+  const config = options?.config;
+  const preset = config
+    ? CALENDAR_GENERATION_PRESETS.find(item => item.id === config.preset) ?? CALENDAR_GENERATION_PRESETS[2]
+    : null;
+  const lines = [
+    `请为${ownerName}生成 ${weekDates[0]} 到 ${weekDates[weekDates.length - 1]} 这 ${weekDates.length} 天的日程安排。`,
     "请参考已有日程，生成这一周的完整日程安排。",
+  ];
+  if (config) {
+    lines.push(`行程类型倾向（软约束，不必机械分配到每一天）：${getCalendarRatioLabel(config.ratios)}。`);
+    if (preset) lines.push(`本周基调：${preset.label}。${preset.desc}。`);
+    if (config.arcEnabled) {
+      lines.push(
+        "本周允许推进正在进行的大事件；大事件只作为背景线索，不要为了推进而每天硬塞相关内容，也不要凭空结束它。",
+        options?.arcBlock || "当前没有正在进行的大事件。",
+      );
+      if (config.arcClue.trim()) lines.push(`用户补充的事件线索：${config.arcClue.trim()}`);
+    }
+    if (config.customPrompt.trim()) lines.push(`用户额外要求：${config.customPrompt.trim()}`);
+  }
+  lines.push(
     "每行一条，格式：YYYY-MM-DD|周几|开始时间|结束时间|地点|emoji|事项。emoji 段填一个最贴合该事项的表情符号。",
     "作息时间不受限制（早起、夜跑、通宵都可以安排），但每一天最多 5 条日程，宁缺毋滥。",
-  ].join("\n");
+  );
+  return lines.join("\n");
 }
 
 function stripCodeFences(text: string): string {
@@ -75,8 +107,7 @@ function stripCodeFences(text: string): string {
     .trim();
 }
 
-function parseScheduleLines(rawText: string, weekStart: string): CalendarScheduleItem[] {
-  const weekDates = new Set(getWeekDates(weekStart));
+function parseScheduleLinesForDates(rawText: string, allowedDates: Set<string>): CalendarScheduleItem[] {
   const lines = stripCodeFences(rawText)
     .split(/\r?\n/)
     .map(line => line.trim())
@@ -103,7 +134,7 @@ function parseScheduleLines(rawText: string, weekStart: string): CalendarSchedul
     const date = parts[0];
     const startTime = normalizeTime(parts[2]);
     const endTime = normalizeTime(parts[3]);
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !weekDates.has(date)) continue;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !allowedDates.has(date)) continue;
     if (!startTime || !endTime || !isCalendarTimeRangeAllowed(startTime, endTime)) continue;
 
     const location = parts[4] === "无" ? "" : parts[4];
@@ -137,10 +168,21 @@ function parseScheduleLines(rawText: string, weekStart: string): CalendarSchedul
   return normalizeGeneratedScheduleItems(parsed);
 }
 
-async function resolveCalendarAssemblerInput(
+function parseScheduleLines(rawText: string, weekStart: string): CalendarScheduleItem[] {
+  return parseScheduleLinesForDates(rawText, new Set(getWeekDates(weekStart)));
+}
+
+type CalendarResolveOptions = {
+  appTags?: string[];
+  scheduleSummary?: string;
+  excludeGenerated?: boolean;
+};
+
+export async function resolveCalendarAssemblerInput(
   ownerType: CalendarOwnerType,
   ownerId: string,
   weekStart: string,
+  options?: CalendarResolveOptions,
 ): Promise<CalendarAssemblerResolved> {
   const bindings = loadBindingConfig();
   const activeSlot = resolveBinding(bindings, ownerType === "character" ? ownerId : undefined, "calendar");
@@ -199,7 +241,8 @@ async function resolveCalendarAssemblerInput(
     longTermMemories = formatLongTermMemories(longResults);
   }
 
-  const scheduleSummary = buildCalendarScheduleMarker(ownerType, ownerId, weekStart);
+  const scheduleSummary = options?.scheduleSummary
+    ?? buildCalendarScheduleMarker(ownerType, ownerId, weekStart, { excludeGenerated: options?.excludeGenerated });
   const llmMessages = assemblePromptPayload({
     character,
     history: [],
@@ -208,6 +251,7 @@ async function resolveCalendarAssemblerInput(
     regexes,
     userIdentity,
     appId: "calendar",
+    ...(options?.appTags ? { appTags: options.appTags } : {}),
     scheduleSummary,
     coreMemories,
     longTermMemories,
@@ -227,22 +271,41 @@ async function resolveCalendarAssemblerInput(
   };
 }
 
-export async function generateWeeklyCalendarSchedule(
+function getCalendarRangeDates(startDate: string, endDate: string): string[] {
+  const start = parseIsoDate(startDate);
+  const end = parseIsoDate(endDate);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) return [];
+  const dates: string[] = [];
+  for (let cursor = start.getTime(); cursor <= end.getTime() && dates.length < 62; cursor += 86_400_000) {
+    dates.push(formatIsoDate(new Date(cursor)));
+  }
+  return dates;
+}
+
+async function requestCalendarScheduleRange(
   ownerType: CalendarOwnerType,
   ownerId: string,
-  weekStart: string,
+  startDate: string,
+  endDate: string,
+  save: boolean,
 ): Promise<{ success: boolean; error?: string; items?: CalendarScheduleItem[] }> {
   if (ownerType !== "character") {
     return { success: false, error: "用户日程不支持 AI 生成，请手动填写。" };
   }
-  // 先清掉本周旧的 AI 生成条目（保留手动条目），让随后的 marker 组装读不到旧结果——
-  // 否则旧日程会进提示词被模型原样照抄，"重新生成"永远一字不差。失败时恢复。
-  const removedGenerated = clearGeneratedWeekItems(ownerType, ownerId, weekStart);
-  const restoreRemoved = () => restoreCalendarWeekItems(ownerType, ownerId, weekStart, removedGenerated);
+  const dates = getCalendarRangeDates(startDate, endDate);
+  if (dates.length === 0) {
+    return { success: false, error: "日期范围无效。" };
+  }
+  const weekStart = getWeekStartIso(parseIsoDate(startDate));
   try {
-    const resolved = await resolveCalendarAssemblerInput(ownerType, ownerId, weekStart);
-    const weekDates = getWeekDates(weekStart);
-    const triggerInstruction = buildCalendarTriggerInstruction(resolved.ownerName, weekDates);
+    // 只把手动条目带进提示词：旧 AI 结果不参与组装，避免"重新生成"照抄旧日程；
+    // 但不再先在存储里删除旧结果，生成失败或中途退出不会丢数据。
+    const resolved = await resolveCalendarAssemblerInput(ownerType, ownerId, weekStart, { excludeGenerated: true });
+    const aiConfig = loadCalendarAiConfig(ownerType, ownerId);
+    const triggerInstruction = buildCalendarTriggerInstruction(resolved.ownerName, dates, {
+      config: aiConfig,
+      arcBlock: aiConfig.arcEnabled ? buildArcPromptBlock(ownerType, ownerId) : undefined,
+    });
 
     const messages: LLMMessage[] = [
       ...resolved.llmMessages,
@@ -262,19 +325,58 @@ export async function generateWeeklyCalendarSchedule(
       { appId: "calendar", appTags: ["calendar"] },
     );
 
-    const items = parseScheduleLines(rawText, weekStart);
+    const items = parseScheduleLinesForDates(rawText, new Set(dates));
     if (items.length === 0) {
-      restoreRemoved();
       return { success: false, error: "日历生成结果为空，或格式无法解析。" };
     }
-
-    cloneWeekPlanWithManualEdits(ownerType, ownerId, weekStart, items);
+    if (save) {
+      if (dates.length === 7 && startDate === weekStart) {
+        cloneWeekPlanWithManualEdits(ownerType, ownerId, weekStart, items);
+      } else {
+        applyGeneratedScheduleRange(ownerType, ownerId, startDate, endDate, items);
+      }
+    }
     return { success: true, items };
   } catch (error) {
-    restoreRemoved();
     const err = error as ChatEngineError | Error;
     return { success: false, error: err?.message || "生成日历失败" };
   }
+}
+
+export async function generateWeeklyCalendarSchedule(
+  ownerType: CalendarOwnerType,
+  ownerId: string,
+  weekStart: string,
+): Promise<{ success: boolean; error?: string; items?: CalendarScheduleItem[] }> {
+  const dates = getWeekDates(weekStart);
+  return requestCalendarScheduleRange(ownerType, ownerId, dates[0], dates[6], true);
+}
+
+export async function previewWeeklyCalendarSchedule(
+  ownerType: CalendarOwnerType,
+  ownerId: string,
+  weekStart: string,
+): Promise<{ success: boolean; error?: string; items?: CalendarScheduleItem[] }> {
+  const dates = getWeekDates(weekStart);
+  return requestCalendarScheduleRange(ownerType, ownerId, dates[0], dates[6], false);
+}
+
+export async function previewCalendarScheduleRange(
+  ownerType: CalendarOwnerType,
+  ownerId: string,
+  startDate: string,
+  endDate: string,
+): Promise<{ success: boolean; error?: string; items?: CalendarScheduleItem[] }> {
+  return requestCalendarScheduleRange(ownerType, ownerId, startDate, endDate, false);
+}
+
+export async function generateCalendarScheduleRange(
+  ownerType: CalendarOwnerType,
+  ownerId: string,
+  startDate: string,
+  endDate: string,
+): Promise<{ success: boolean; error?: string; items?: CalendarScheduleItem[] }> {
+  return requestCalendarScheduleRange(ownerType, ownerId, startDate, endDate, true);
 }
 
 export async function previewCalendarPromptPayload(
@@ -285,9 +387,13 @@ export async function previewCalendarPromptPayload(
   if (ownerType !== "character") {
     throw new Error("用户日程不支持 AI 生成预览。");
   }
-  const resolved = await resolveCalendarAssemblerInput(ownerType, ownerId, weekStart);
+  const resolved = await resolveCalendarAssemblerInput(ownerType, ownerId, weekStart, { excludeGenerated: true });
   const weekDates = getWeekDates(weekStart);
-  const triggerInstruction = buildCalendarTriggerInstruction(resolved.ownerName, weekDates);
+  const aiConfig = loadCalendarAiConfig(ownerType, ownerId);
+  const triggerInstruction = buildCalendarTriggerInstruction(resolved.ownerName, weekDates, {
+    config: aiConfig,
+    arcBlock: aiConfig.arcEnabled ? buildArcPromptBlock(ownerType, ownerId) : undefined,
+  });
 
   const messages: LLMMessage[] = [
     ...resolved.llmMessages,

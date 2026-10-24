@@ -3,9 +3,11 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { ChevronLeft, Palette } from "lucide-react";
 import type { CalendarScheduleItem } from "@/lib/calendar-types";
+import { getCalendarDailyMoodMeta, type CalendarDayRecord } from "@/lib/calendar-day-types";
 import type { MenstrualDayState } from "@/lib/menstrual-storage";
 import { formatIsoDate } from "@/lib/calendar-utils";
 import { getLunarInfoByIso } from "@/lib/lunar";
+import { CalendarViewTabs, type CalendarViewTab } from "./view-tabs";
 
 const MONTH_CN = ["一月", "二月", "三月", "四月", "五月", "六月", "七月", "八月", "九月", "十月", "十一月", "十二月"];
 const WEEKDAY_CN = ["日", "一", "二", "三", "四", "五", "六"];
@@ -61,16 +63,24 @@ function buildMonths(todayIso: string): MonthBlock[] {
 export function CalendarMonthPage({
   todayIso,
   itemsByDate,
+  dayRecordByDate,
+  holidayMap,
   cycleMap,
   ownerStrip,
+  activeTab,
+  onTabChange,
   onPickDay,
   onClose,
   onOpenTheme,
 }: {
   todayIso: string;
   itemsByDate: Map<string, CalendarScheduleItem[]>;
+  dayRecordByDate: Map<string, CalendarDayRecord>;
+  holidayMap: Map<string, string[]>;
   cycleMap: Map<string, MenstrualDayState> | null;
   ownerStrip: ReactNode;
+  activeTab: CalendarViewTab;
+  onTabChange: (tab: CalendarViewTab) => void;
   onPickDay: (iso: string) => void;
   onClose: () => void;
   onOpenTheme: () => void;
@@ -154,18 +164,29 @@ export function CalendarMonthPage({
                 {week.map(cell => {
                   const items = itemsByDate.get(cell.iso);
                   const cycle = cycleMap?.get(cell.iso) ?? null;
+                  const record = dayRecordByDate.get(cell.iso);
+                  const mood = getCalendarDailyMoodMeta(record?.mood ?? null);
+                  const holidays = holidayMap.get(cell.iso) ?? [];
+                  const holidayLabel = holidays[0] ? holidays[0].split("·").pop() ?? holidays[0] : "";
                   return (
                     <button
                       key={cell.iso}
                       type="button"
                       className="calendar-month-cell"
                       data-today={cell.iso === todayIso ? "true" : undefined}
+                      data-has-mood={mood ? "true" : undefined}
+                      data-has-holiday={holidays.length > 0 ? "true" : undefined}
+                      data-holiday={holidays.length > 0 ? "true" : undefined}
+                      title={holidays.length > 0 ? holidays.join(" / ") : undefined}
                       style={{ gridColumnStart: cell.weekday + 1 }}
-                      aria-label={`${block.month + 1}月${cell.day}日${items?.length ? `，${items.length}个日程` : ""}`}
+                      aria-label={`${block.month + 1}月${cell.day}日${items?.length ? `，${items.length}个日程` : ""}${mood ? `，心情${mood.label}` : ""}${holidays.length ? `，${holidays.join("、")}` : ""}`}
                       onClick={() => onPickDay(cell.iso)}
                     >
                       <span className="calendar-month-num">{cell.day}</span>
-                      <span className={`calendar-month-lunar${cell.lunarFirst ? " is-first" : ""}`}>{cell.lunarLabel}</span>
+                      {mood ? <span className="calendar-month-mood" aria-hidden="true">{mood.emoji}</span> : null}
+                      <span className={`calendar-month-lunar${cell.lunarFirst ? " is-first" : ""}${holidayLabel ? " is-holiday" : ""}`}>
+                        {holidayLabel || cell.lunarLabel}
+                      </span>
                       <span className="calendar-month-dots" aria-hidden="true">
                         {cycle ? <i className="calendar-cycle-dot" data-type={cycle.type} /> : null}
                         {items && items.length > 0 ? <i className="calendar-event-dot" data-color={items[0].colorKey} /> : null}
@@ -193,6 +214,8 @@ export function CalendarMonthPage({
         </div>
 
         {ownerStrip}
+
+        <CalendarViewTabs active={activeTab} onChange={onTabChange} />
 
         <div className="calendar-month-title">
           <strong>{MONTH_CN[titleMonth] ?? ""}</strong>

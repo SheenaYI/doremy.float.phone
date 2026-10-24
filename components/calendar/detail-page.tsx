@@ -6,6 +6,7 @@ import type { CalendarScheduleItem } from "@/lib/calendar-types";
 import type { MenstrualDayState } from "@/lib/menstrual-storage";
 import { formatIsoDate, parseIsoDate, timeToMinutes } from "@/lib/calendar-utils";
 import { getLunarInfoByIso } from "@/lib/lunar";
+import { CalendarViewTabs, type CalendarViewTab } from "./view-tabs";
 
 const WEEKDAY_CN = ["日", "一", "二", "三", "四", "五", "六"];
 const WEEK_LABEL = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
@@ -90,6 +91,8 @@ export function CalendarDetailPage({
   onBack,
   onSelectedChange,
   onEditItem,
+  activeTab,
+  onTabChange,
 }: {
   initialDate: string;
   todayIso: string;
@@ -106,6 +109,8 @@ export function CalendarDetailPage({
   onBack: () => void;
   onSelectedChange: (iso: string) => void;
   onEditItem: (item: CalendarScheduleItem) => void;
+  activeTab: CalendarViewTab;
+  onTabChange: (tab: CalendarViewTab) => void;
 }) {
   const [center, setCenter] = useState(initialDate);
   const [selectedIso, setSelectedIso] = useState(initialDate);
@@ -331,6 +336,8 @@ export function CalendarDetailPage({
           </button>
         ) : null}
       </div>
+
+      <CalendarViewTabs active={activeTab} onChange={onTabChange} />
 
       <div className="calendar-weekday-head calendar-strip-head" aria-hidden="true">
         {WEEKDAY_CN.map(w => (
