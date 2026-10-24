@@ -77,6 +77,30 @@ function normalizeBlocks(value: unknown, fallbackBody: string): DiaryEntryBlock[
       const record = block as Record<string, unknown>;
       const type = cleanText(record.type, 32).toLowerCase();
 
+      if (type === "highlight" || type === "mark" || type === "荧光") {
+        const text = cleanMultilineText(record.text ?? record.content, 900);
+        return text ? { type: "highlight", text } : null;
+      }
+      if (type === "bold" || type === "strong" || type === "着重") {
+        const text = cleanMultilineText(record.text ?? record.content, 900);
+        return text ? { type: "bold", text } : null;
+      }
+      if (type === "italic" || type === "em") {
+        const text = cleanMultilineText(record.text ?? record.content, 900);
+        return text ? { type: "italic", text } : null;
+      }
+      if (type === "ul" || type === "ol" || type === "bullet_list" || type === "ordered_list") {
+        const items = Array.isArray(record.items)
+          ? record.items.map(item => typeof item === "string" ? item : (item as Record<string, unknown>)?.text ?? (item as Record<string, unknown>)?.content ?? "").map(item => cleanText(item, 300)).filter(Boolean).slice(0, 20)
+          : [];
+        if (items.length === 0) return null;
+        return {
+          type: "list",
+          ordered: type === "ol" || type === "ordered_list" || record.ordered === true,
+          title: cleanText(record.title ?? record.heading, 40),
+          items,
+        };
+      }
       if (type === "todo" || type === "todos" || type === "list") {
         const items = normalizeTodoItems(record.items ?? record.todos ?? record.list);
         if (items.length === 0) return null;
@@ -149,9 +173,10 @@ export function parseDiaryEntryContent(content: string): ParsedDiaryEntry {
   const body = cleanMultilineText(record.body ?? record.content ?? record.text, 6000);
   const blocks = normalizeBlocks(record.blocks ?? record.sections ?? record.items, body);
   const combinedBody = body || blocks.map(block => {
-    if (block.type === "paragraph" || block.type === "quote") return block.text;
+    if (block.type === "paragraph" || block.type === "quote" || block.type === "highlight" || block.type === "bold" || block.type === "italic") return block.text;
     if (block.type === "correction") return block.replacement || block.text;
     if (block.type === "image") return block.description;
+    if (block.type === "list") return [block.title, ...block.items].filter(Boolean).join("\n");
     if (block.type === "todo") return block.items.map(item => `${item.done ? "完成" : "待办"}：${item.text}`).join("\n");
     return "";
   }).filter(Boolean).join("\n\n");

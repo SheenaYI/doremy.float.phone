@@ -3898,3 +3898,1309 @@
 @keyframes diary-generating-spin {
   to { transform: rotate(360deg); }
 }
+
+/* 手记关联卡片 */
+.diary-attachment-section {
+  margin-top: 22px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(90, 80, 60, 0.14);
+}
+
+.diary-attachment-section > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.diary-attachment-section > header strong {
+  font-size: calc(11px * var(--app-text-scale, 1));
+  color: rgba(70, 62, 48, 0.72);
+  letter-spacing: 0.04em;
+}
+
+.diary-attachment-section > header button {
+  border: 1px solid rgba(120, 100, 70, 0.24);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.4);
+  color: rgba(90, 74, 52, 0.7);
+  font-size: calc(9px * var(--app-text-scale, 1));
+  padding: 4px 9px;
+  cursor: pointer;
+}
+
+.diary-attachment-empty {
+  margin: 6px 0;
+  font-size: calc(9.5px * var(--app-text-scale, 1));
+  line-height: 1.55;
+  color: rgba(90, 84, 70, 0.48);
+}
+
+.diary-attachment-list {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.diary-attachment-card {
+  position: relative;
+  border-radius: 12px;
+  background: rgba(245, 241, 231, 0.72);
+  border: 1px solid rgba(120, 100, 70, 0.14);
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.diary-attachment-card blockquote {
+  margin: 0;
+  font-size: calc(11px * var(--app-text-scale, 1));
+  line-height: 1.6;
+  color: rgba(60, 55, 45, 0.82);
+  white-space: pre-wrap;
+}
+
+.diary-attachment-card > em {
+  font-style: normal;
+  font-size: calc(8.5px * var(--app-text-scale, 1));
+  color: rgba(90, 84, 70, 0.48);
+}
+
+.diary-attachment-card > strong {
+  font-size: calc(11.5px * var(--app-text-scale, 1));
+  color: rgba(60, 55, 45, 0.86);
+}
+
+.diary-attachment-card > p {
+  margin: 0;
+  font-size: calc(9.5px * var(--app-text-scale, 1));
+  line-height: 1.5;
+  color: rgba(90, 84, 70, 0.6);
+}
+
+.diary-attachment-eyebrow {
+  font-size: calc(8.5px * var(--app-text-scale, 1));
+  letter-spacing: 0.04em;
+  color: rgba(100, 86, 62, 0.58);
+}
+
+.diary-attachment-remove {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(90, 80, 60, 0.08);
+  color: rgba(90, 80, 60, 0.55);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.diary-attachment-music {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding-right: 18px;
+}
+
+.diary-attachment-music > img,
+.diary-attachment-music > span {
+  width: 42px;
+  height: 42px;
+  border-radius: 9px;
+  object-fit: cover;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(120, 100, 70, 0.1);
+  color: rgba(90, 74, 52, 0.6);
+}
+
+.diary-attachment-music > div {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.diary-attachment-photo {
+  width: 100%;
+  max-height: 220px;
+  object-fit: cover;
+  border-radius: 9px;
+}
+
+.diary-attachment-picker {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  background: #fbfaf5;
+  display: flex;
+  flex-direction: column;
+  padding: calc(var(--page-header-safe-top, 48px) + 6px) 14px calc(env(safe-area-inset-bottom, 0px) + 14px);
+}
+
+.diary-attachment-picker > header {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  flex: none;
+}
+
+.diary-attachment-picker > header > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.diary-attachment-picker > header strong {
+  font-size: calc(14px * var(--app-text-scale, 1));
+  color: #3f463f;
+}
+
+.diary-attachment-picker > header p {
+  margin: 0;
+  font-size: calc(9px * var(--app-text-scale, 1));
+  line-height: 1.45;
+  color: rgba(63, 70, 63, 0.55);
+}
+
+.diary-attachment-tabs {
+  display: flex;
+  gap: 5px;
+  padding: 12px 0 8px;
+  flex: none;
+}
+
+.diary-attachment-tabs button {
+  border: 1px solid rgba(90, 90, 80, 0.14);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.55);
+  color: rgba(63, 70, 63, 0.58);
+  font-size: calc(9.5px * var(--app-text-scale, 1));
+  padding: 5px 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+
+.diary-attachment-tabs button[data-active="true"] {
+  background: #465846;
+  border-color: #465846;
+  color: #fbfaf5;
+}
+
+.diary-attachment-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.diary-attachment-chat-row,
+.diary-attachment-experience-row,
+.diary-attachment-music-row {
+  border: none;
+  border-bottom: 1px solid rgba(90, 80, 60, 0.1);
+  background: none;
+  padding: 9px 2px;
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  text-align: left;
+  cursor: pointer;
+  width: 100%;
+}
+
+.diary-attachment-chat-row > span {
+  flex: none;
+  font-size: calc(8.5px * var(--app-text-scale, 1));
+  color: rgba(90, 74, 52, 0.5);
+  padding-top: 2px;
+}
+
+.diary-attachment-chat-row p {
+  margin: 0;
+  font-size: calc(10.5px * var(--app-text-scale, 1));
+  line-height: 1.55;
+  color: rgba(55, 52, 45, 0.78);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.diary-attachment-music-row img,
+.diary-attachment-music-cover {
+  width: 38px;
+  height: 38px;
+  border-radius: 8px;
+  object-fit: cover;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(120, 100, 70, 0.1);
+}
+
+.diary-attachment-music-row > div,
+.diary-attachment-experience-row > div {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.diary-attachment-music-row strong,
+.diary-attachment-experience-row strong {
+  font-size: calc(11px * var(--app-text-scale, 1));
+  color: rgba(55, 52, 45, 0.82);
+}
+
+.diary-attachment-music-row em,
+.diary-attachment-experience-row em,
+.diary-attachment-experience-row > span {
+  font-style: normal;
+  font-size: calc(8.5px * var(--app-text-scale, 1));
+  color: rgba(90, 84, 70, 0.5);
+}
+
+.diary-attachment-photo-upload {
+  border: 1px dashed rgba(90, 80, 60, 0.24);
+  border-radius: 14px;
+  min-height: 140px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  color: rgba(90, 74, 52, 0.55);
+  font-size: calc(10px * var(--app-text-scale, 1));
+  cursor: pointer;
+}
+
+.diary-attachment-subtitle {
+  margin: 7px 0 1px;
+  font-size: calc(8.5px * var(--app-text-scale, 1));
+  letter-spacing: 0.04em;
+  color: rgba(90, 84, 70, 0.46);
+  font-weight: 700;
+}
+
+.diary-attachment-experience-photos {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 5px;
+  margin-top: 5px;
+}
+
+.diary-attachment-experience-photos button {
+  aspect-ratio: 1;
+  border: none;
+  padding: 0;
+  border-radius: 8px;
+  overflow: hidden;
+  background: rgba(120, 100, 70, 0.1);
+  cursor: pointer;
+}
+
+.diary-attachment-experience-photos img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* 手记富文本扩展：高亮 / 着重 / 斜体 / 列表 */
+.diary-entry-highlight {
+  background: linear-gradient(transparent 52%, rgba(226, 196, 120, 0.55) 52%);
+  color: inherit;
+  padding: 0 1px;
+}
+
+.diary-entry-bold {
+  font-weight: 700;
+}
+
+.diary-entry-italic {
+  font-style: italic;
+}
+
+.diary-entry-rich-list {
+  margin: 10px 0;
+}
+
+.diary-entry-rich-list h3 {
+  margin: 0 0 4px;
+  font-size: calc(11px * var(--app-text-scale, 1));
+  color: rgba(90, 80, 60, 0.66);
+}
+
+.diary-entry-rich-list ul,
+.diary-entry-rich-list ol {
+  margin: 0;
+  padding-left: 1.4em;
+}
+
+.diary-entry-rich-list li {
+  margin: 3px 0;
+  line-height: 1.7;
+}
+
+/* 角色手记 · 时尚杂志封面 */
+.diary-magazine-cover {
+  position: relative;
+  aspect-ratio: 3 / 4.15;
+  border: none;
+  border-radius: 4px;
+  padding: 13px 13px 11px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  text-align: left;
+  overflow: hidden;
+  background: #F4F0E7;
+  color: #252522;
+  box-shadow:
+    0 10px 22px rgba(52, 45, 34, 0.14),
+    0 2px 4px rgba(52, 45, 34, 0.08);
+  cursor: pointer;
+}
+
+.diary-magazine-cover[data-cover="0"] { background: linear-gradient(160deg, #F7F2E9 0%, #EAE1D2 100%); }
+.diary-magazine-cover[data-cover="1"] { background: linear-gradient(160deg, #F2EDE5 0%, #E4D8C8 100%); }
+.diary-magazine-cover[data-cover="2"] { background: linear-gradient(160deg, #F6F1EA 0%, #E9DCD5 100%); }
+.diary-magazine-cover[data-cover="3"] { background: linear-gradient(160deg, #F1F0E8 0%, #DDE2D5 100%); }
+.diary-magazine-cover[data-cover="4"] { background: linear-gradient(160deg, #F5F0E8 0%, #E5DCCB 100%); }
+.diary-magazine-cover[data-cover="5"] { background: linear-gradient(160deg, #F6F2EC 0%, #DDD9CF 100%); }
+
+.diary-mag-rule {
+  display: block;
+  height: 1px;
+  background: rgba(37, 37, 34, 0.55);
+  margin-bottom: 7px;
+}
+
+.diary-mag-kicker {
+  font-family: "Helvetica Neue", Arial, sans-serif;
+  font-size: 7px;
+  letter-spacing: 0.18em;
+  font-weight: 700;
+  color: #858079;
+}
+
+.diary-mag-title {
+  margin-top: 3px;
+  font-family: "Times New Roman", "Songti SC", serif;
+  font-size: clamp(27px, 9vw, 38px);
+  line-height: 0.9;
+  letter-spacing: -0.04em;
+  font-weight: 800;
+  color: #252522;
+}
+
+.diary-mag-title::first-letter {
+  color: #B63D35;
+}
+
+.diary-mag-issue {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  margin-top: 8px;
+  font-family: "Helvetica Neue", Arial, sans-serif;
+  font-size: 7.5px;
+  letter-spacing: 0.08em;
+  color: #858079;
+}
+
+.diary-mag-issue b {
+  color: #B63D35;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0;
+}
+
+.diary-mag-issue em {
+  margin-left: auto;
+  font-style: normal;
+  font-size: 8px;
+  color: #252522;
+}
+
+.diary-mag-avatar {
+  position: absolute;
+  top: 58px;
+  right: 12px;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  overflow: hidden;
+  border: 2px solid rgba(255, 252, 246, 0.9);
+  box-shadow: 0 3px 8px rgba(40, 34, 26, 0.18);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #E7E0D4;
+  color: #858079;
+}
+
+.diary-mag-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.diary-mag-name {
+  margin-top: auto;
+  font-family: "Songti SC", "Noto Serif SC", "Times New Roman", serif;
+  font-size: 18px;
+  line-height: 1.15;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: #252522;
+  max-width: 86%;
+}
+
+.diary-mag-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(37, 37, 34, 0.18);
+}
+
+.diary-mag-list > span {
+  display: flex;
+  gap: 5px;
+  align-items: baseline;
+  min-width: 0;
+}
+
+.diary-mag-list b {
+  font-family: "Helvetica Neue", Arial, sans-serif;
+  font-size: 7px;
+  color: #B63D35;
+  flex: none;
+}
+
+.diary-mag-list em {
+  font-style: normal;
+  font-family: "Songti SC", "Noto Serif SC", serif;
+  font-size: 9px;
+  color: #5E5A52;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.diary-mag-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  margin-top: 7px;
+  font-family: "Helvetica Neue", Arial, sans-serif;
+  font-size: 6.5px;
+  letter-spacing: 0.08em;
+  color: #858079;
+}
+
+.diary-mag-foot time {
+  font-size: 6.5px;
+  color: #858079;
+}
+
+/* 手记 · 期刊封面与目录 */
+.diary-magazine-issue {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 0 4px 30px;
+}
+
+.diary-mag-years {
+  display: flex;
+  gap: 12px;
+  padding: 4px 2px 0;
+  overflow-x: auto;
+}
+
+.diary-mag-years button {
+  border: none;
+  background: none;
+  color: rgba(90, 84, 70, 0.46);
+  font-family: "Helvetica Neue", Arial, sans-serif;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  padding: 2px 0;
+  cursor: pointer;
+}
+
+.diary-mag-years button[data-active="true"] {
+  color: #B63D35;
+  border-bottom: 1.5px solid #B63D35;
+}
+
+.diary-mag-months {
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  padding: 1px 0 5px;
+  border-bottom: 1px solid rgba(90, 80, 60, 0.14);
+}
+
+.diary-mag-months button {
+  position: relative;
+  flex: none;
+  width: 30px;
+  height: 28px;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  color: rgba(90, 84, 70, 0.5);
+  font-family: "Helvetica Neue", Arial, sans-serif;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.diary-mag-months button i {
+  position: absolute;
+  right: 4px;
+  bottom: 2px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #B63D35;
+  font-style: normal;
+  font-size: 0;
+}
+
+.diary-mag-months button[data-active="true"] {
+  background: #B63D35;
+  color: #FFFCF6;
+  font-weight: 700;
+}
+
+.diary-mag-months button[data-active="true"] i {
+  background: #FFFCF6;
+}
+
+.diary-issue-cover {
+  position: relative;
+  min-height: 430px;
+  border-radius: 3px;
+  padding: 18px 17px 13px;
+  background:
+    linear-gradient(165deg, rgba(255, 252, 246, 0.96), rgba(242, 235, 223, 0.94)),
+    #FFFCF6;
+  color: #252522;
+  box-shadow: 0 16px 34px rgba(52, 45, 34, 0.16), 0 2px 5px rgba(52, 45, 34, 0.08);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.diary-issue-cover::after {
+  content: "";
+  position: absolute;
+  inset: 8px;
+  border: 1px solid rgba(37, 37, 34, 0.16);
+  pointer-events: none;
+}
+
+.diary-issue-kicker {
+  font-family: "Helvetica Neue", Arial, sans-serif;
+  font-size: 7px;
+  letter-spacing: 0.2em;
+  font-weight: 700;
+  color: #858079;
+}
+
+.diary-issue-cover h2 {
+  margin: 8px 0 0;
+  font-family: "Times New Roman", "Songti SC", serif;
+  font-size: clamp(48px, 15vw, 72px);
+  line-height: 0.82;
+  letter-spacing: -0.05em;
+  font-weight: 800;
+  color: #252522;
+}
+
+.diary-issue-cover h2::first-letter {
+  color: #B63D35;
+}
+
+.diary-issue-meta {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 13px;
+  font-family: "Helvetica Neue", Arial, sans-serif;
+  font-size: 8px;
+  letter-spacing: 0.1em;
+  color: #858079;
+}
+
+.diary-issue-meta b {
+  color: #B63D35;
+  font-size: 20px;
+  letter-spacing: 0;
+  font-weight: 800;
+}
+
+.diary-issue-meta > span:last-child {
+  font-family: "Songti SC", "Noto Serif SC", serif;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  color: #252522;
+}
+
+.diary-issue-month {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-top: 17px;
+  padding-top: 11px;
+  border-top: 1px solid rgba(37, 37, 34, 0.24);
+}
+
+.diary-issue-month strong {
+  font-family: "Helvetica Neue", Arial, sans-serif;
+  font-size: 20px;
+  letter-spacing: 0.06em;
+  color: #B63D35;
+}
+
+.diary-issue-month em {
+  font-style: normal;
+  font-family: "Songti SC", "Noto Serif SC", serif;
+  font-size: 11px;
+  color: #5E5A52;
+}
+
+.diary-issue-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 16px;
+}
+
+.diary-issue-list button {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  border: none;
+  background: none;
+  padding: 2px 0;
+  text-align: left;
+  cursor: pointer;
+  color: #252522;
+}
+
+.diary-issue-list b {
+  flex: none;
+  font-family: "Helvetica Neue", Arial, sans-serif;
+  font-size: 8px;
+  color: #B63D35;
+}
+
+.diary-issue-list span {
+  font-family: "Songti SC", "Noto Serif SC", serif;
+  font-size: 12px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.diary-issue-list p {
+  margin: 6px 0;
+  font-family: "Songti SC", "Noto Serif SC", serif;
+  font-size: 11px;
+  color: #858079;
+}
+
+.diary-issue-foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: auto;
+  padding-top: 12px;
+  font-family: "Helvetica Neue", Arial, sans-serif;
+  font-size: 7px;
+  letter-spacing: 0.1em;
+  color: #858079;
+}
+
+.diary-issue-toc {
+  padding: 4px 2px 0;
+}
+
+.diary-issue-toc > header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding-bottom: 7px;
+  border-bottom: 1px solid rgba(90, 80, 60, 0.18);
+}
+
+.diary-issue-toc > header span {
+  font-family: "Helvetica Neue", Arial, sans-serif;
+  font-size: 8px;
+  letter-spacing: 0.16em;
+  font-weight: 700;
+  color: #858079;
+}
+
+.diary-issue-toc > header b {
+  font-family: "Songti SC", "Noto Serif SC", serif;
+  font-size: 12px;
+  color: #252522;
+}
+
+.diary-issue-toc-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.diary-issue-toc-list button {
+  display: flex;
+  gap: 9px;
+  align-items: baseline;
+  border: none;
+  border-bottom: 1px solid rgba(90, 80, 60, 0.1);
+  background: none;
+  padding: 10px 2px;
+  text-align: left;
+  cursor: pointer;
+  color: #252522;
+}
+
+.diary-issue-toc-list b {
+  flex: none;
+  font-family: "Helvetica Neue", Arial, sans-serif;
+  font-size: 8px;
+  color: #B63D35;
+}
+
+.diary-issue-toc-list div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.diary-issue-toc-list strong {
+  font-family: "Songti SC", "Noto Serif SC", serif;
+  font-size: 13px;
+  font-weight: 600;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.diary-issue-toc-list em {
+  font-style: normal;
+  font-family: "Helvetica Neue", Arial, sans-serif;
+  font-size: 8px;
+  color: #858079;
+}
+
+.diary-issue-empty {
+  margin: 12px 2px;
+  font-family: "Songti SC", "Noto Serif SC", serif;
+  font-size: 11px;
+  color: #858079;
+}
+
+/* 手记 · 杂志翻页阅读 */
+.diary-mag-reader {
+  position: fixed;
+  inset: 0;
+  z-index: 78;
+  background: #F7F5F0;
+  color: #252522;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.diary-mag-reader-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: calc(var(--page-header-safe-top, 48px) + 5px) 14px 7px;
+  border-bottom: 1px solid rgba(90, 80, 60, 0.14);
+}
+
+.diary-mag-reader-title {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: center;
+}
+
+.diary-mag-reader-title span {
+  font-family: "Helvetica Neue", Arial, sans-serif;
+  font-size: 7px;
+  letter-spacing: 0.16em;
+  color: #858079;
+}
+
+.diary-mag-reader-title strong {
+  font-family: "Songti SC", "Noto Serif SC", serif;
+  font-size: 14px;
+  font-weight: 700;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.diary-mag-reader-delete {
+  border: none;
+  background: none;
+  color: rgba(90, 80, 60, 0.45);
+  padding: 6px;
+  cursor: pointer;
+}
+
+.diary-mag-viewport {
+  flex: 1;
+  min-height: 0;
+  padding: 18px 24px 8px;
+  overflow: hidden;
+  touch-action: pan-y;
+}
+
+.diary-mag-viewport[data-fallback="true"] {
+  overflow-y: auto;
+  padding-bottom: 30px;
+}
+
+.diary-mag-flow {
+  column-fill: auto;
+  will-change: transform;
+  font-family: "Songti SC", "Noto Serif SC", "Times New Roman", serif;
+  color: #252522;
+}
+
+.diary-mag-article-head {
+  break-inside: avoid;
+  margin-bottom: 14px;
+}
+
+.diary-mag-article-head > span {
+  font-family: "Helvetica Neue", Arial, sans-serif;
+  font-size: 7px;
+  letter-spacing: 0.18em;
+  color: #858079;
+}
+
+.diary-mag-article-date {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-top: 9px;
+}
+
+.diary-mag-article-date b {
+  font-family: "Helvetica Neue", Arial, sans-serif;
+  font-size: 36px;
+  line-height: 0.9;
+  color: #B63D35;
+  letter-spacing: -0.04em;
+}
+
+.diary-mag-article-date > span {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  font-family: "Helvetica Neue", Arial, sans-serif;
+  font-size: 8px;
+  letter-spacing: 0.12em;
+  color: #858079;
+}
+
+.diary-mag-article-date em {
+  font-style: normal;
+  font-size: 7px;
+  letter-spacing: 0.08em;
+}
+
+.diary-mag-article-head h1 {
+  margin: 13px 0 0;
+  font-family: "Songti SC", "Noto Serif SC", "Times New Roman", serif;
+  font-size: 30px;
+  line-height: 1.18;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  color: #252522;
+}
+
+.diary-mag-article-rule {
+  height: 1px;
+  background: rgba(90, 80, 60, 0.22);
+  margin-top: 14px;
+}
+
+.diary-mag-article-body {
+  font-size: 15px;
+  line-height: 1.95;
+  letter-spacing: 0.015em;
+}
+
+.diary-mag-article-body .diary-entry-paragraph {
+  margin: 0 0 14px;
+  text-align: justify;
+}
+
+.diary-mag-article-body .diary-entry-quote {
+  margin: 12px 0;
+  padding: 2px 0 2px 12px;
+  border-left: 2px solid #B63D35;
+  font-size: 14px;
+  color: #5E5A52;
+}
+
+.diary-mag-article-body .diary-entry-image-block,
+.diary-mag-article-body .diary-entry-todo,
+.diary-mag-article-body .diary-entry-rich-list,
+.diary-mag-article-body .diary-entry-correction {
+  break-inside: avoid;
+}
+
+.diary-mag-article-body .diary-entry-rich-list h3,
+.diary-mag-article-body .diary-entry-todo h3 {
+  font-family: "Helvetica Neue", Arial, sans-serif;
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  color: #858079;
+}
+
+.diary-mag-article-signature {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 16px;
+  padding-top: 9px;
+  border-top: 1px solid rgba(90, 80, 60, 0.18);
+  font-family: "Helvetica Neue", Arial, sans-serif;
+  font-size: 8px;
+  color: #858079;
+}
+
+.diary-mag-related {
+  margin-top: 20px;
+  break-inside: avoid;
+}
+
+.diary-mag-related > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid rgba(90, 80, 60, 0.2);
+}
+
+.diary-mag-related > header span {
+  font-family: "Helvetica Neue", Arial, sans-serif;
+  font-size: 7px;
+  letter-spacing: 0.16em;
+  font-weight: 700;
+  color: #858079;
+}
+
+.diary-mag-related > header button {
+  border: none;
+  background: none;
+  color: #B63D35;
+  font-family: "Helvetica Neue", Arial, sans-serif;
+  font-size: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  cursor: pointer;
+}
+
+.diary-mag-related > p {
+  margin: 8px 0;
+  font-size: 10px;
+  line-height: 1.6;
+  color: #858079;
+}
+
+.diary-mag-related-list {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin-top: 8px;
+}
+
+.diary-mag-related-list article {
+  display: flex;
+  gap: 7px;
+  align-items: flex-start;
+  border-bottom: 1px solid rgba(90, 80, 60, 0.1);
+  padding-bottom: 7px;
+}
+
+.diary-mag-related-list article > b {
+  flex: none;
+  font-family: "Helvetica Neue", Arial, sans-serif;
+  font-size: 7px;
+  color: #B63D35;
+}
+
+.diary-mag-related-list article > div {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.diary-mag-related-list blockquote {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.55;
+  color: #5E5A52;
+}
+
+.diary-mag-related-list strong {
+  font-size: 11px;
+  line-height: 1.5;
+  font-weight: 600;
+}
+
+.diary-mag-related-list img {
+  width: 100%;
+  max-height: 180px;
+  object-fit: cover;
+  border-radius: 5px;
+}
+
+.diary-mag-related-list article > button {
+  border: none;
+  background: none;
+  color: #858079;
+  padding: 2px;
+  cursor: pointer;
+}
+
+.diary-mag-page-btn {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 34px;
+  height: 54px;
+  border: none;
+  background: rgba(247, 245, 240, 0.72);
+  color: rgba(37, 37, 34, 0.62);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 2;
+}
+
+.diary-mag-page-btn:disabled {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.diary-mag-page-prev { left: 0; }
+.diary-mag-page-next { right: 0; }
+
+.diary-mag-reader-foot {
+  flex: none;
+  display: grid;
+  grid-template-columns: auto minmax(70px, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 18px calc(env(safe-area-inset-bottom, 0px) + 10px);
+  font-family: "Helvetica Neue", Arial, sans-serif;
+  font-size: 7px;
+  letter-spacing: 0.08em;
+  color: #858079;
+}
+
+.diary-mag-progress {
+  height: 1px;
+  background: rgba(90, 80, 60, 0.18);
+  overflow: hidden;
+}
+
+.diary-mag-progress i {
+  display: block;
+  height: 100%;
+  background: #B63D35;
+  transition: width 0.3s ease;
+}
+
+/* 角色档案 · 浮动封面 */
+.diary-archive-board {
+  position: relative;
+  width: 100%;
+  padding: 10px 0 30px;
+  overflow: hidden;
+}
+
+.diary-archive-hint {
+  position: absolute;
+  top: 0;
+  right: 4px;
+  font-family: "Helvetica Neue", Arial, sans-serif;
+  font-size: 7px;
+  letter-spacing: 0.12em;
+  color: rgba(90, 84, 70, 0.42);
+  pointer-events: none;
+}
+
+.diary-archive-item {
+  position: absolute;
+  width: 44%;
+  max-width: 190px;
+  touch-action: none;
+  transition: box-shadow 0.2s ease;
+  filter: drop-shadow(0 8px 12px rgba(52, 45, 34, 0.08));
+}
+
+.diary-archive-item[data-dragging="true"] {
+  filter: drop-shadow(0 16px 22px rgba(52, 45, 34, 0.22));
+}
+
+.diary-archive-item .diary-book {
+  width: 100%;
+  min-height: 0;
+  height: auto;
+}
+
+.diary-archive-item .diary-magazine-cover {
+  aspect-ratio: 3 / 4.15;
+}
+
+.diary-archive-cover-edit {
+  position: absolute;
+  right: 7px;
+  bottom: 7px;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px 5px;
+  border-radius: 999px;
+  background: rgba(255, 252, 246, 0.82);
+  color: rgba(70, 60, 45, 0.62);
+  font-family: "Helvetica Neue", Arial, sans-serif;
+  font-size: 6.5px;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  backdrop-filter: blur(4px);
+}
+
+/* 档案封面：头像铺满 + 白色文字 */
+.diary-magazine-cover {
+  isolation: isolate;
+  background: #2E2B26;
+  color: #FFFFFF;
+}
+
+.diary-mag-cover-photo {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+}
+
+.diary-mag-cover-photo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  filter: saturate(0.88) contrast(1.02);
+}
+
+.diary-mag-cover-photo::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background:
+    linear-gradient(180deg, rgba(18, 17, 15, 0.28) 0%, rgba(18, 17, 15, 0.12) 38%, rgba(18, 17, 15, 0.72) 100%),
+    linear-gradient(90deg, rgba(18, 17, 15, 0.38), transparent 58%);
+}
+
+.diary-magazine-cover > *:not(.diary-mag-cover-photo) {
+  position: relative;
+  z-index: 2;
+}
+
+.diary-mag-rule {
+  background: rgba(255, 255, 255, 0.58);
+}
+
+.diary-mag-kicker,
+.diary-mag-issue,
+.diary-mag-issue em,
+.diary-mag-name,
+.diary-mag-title,
+.diary-mag-list em,
+.diary-mag-foot,
+.diary-mag-foot time {
+  color: #FFFFFF;
+  text-shadow: 0 1px 5px rgba(0, 0, 0, 0.45);
+}
+
+.diary-mag-title::first-letter {
+  color: #FFFFFF;
+}
+
+.diary-mag-issue b {
+  color: #F3B3AA;
+}
+
+.diary-mag-list {
+  border-top-color: rgba(255, 255, 255, 0.34);
+}
+
+.diary-mag-list b {
+  color: #F3B3AA;
+}
+
+.diary-mag-name {
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.55);
+}
+
+.diary-mag-list em,
+.diary-mag-foot,
+.diary-mag-foot time {
+  opacity: 0.86;
+}
+
+/* 月份时间轴：圆点居中，选中月不再显示内部圆点 */
+.diary-mag-months button i {
+  left: 50%;
+  right: auto;
+  bottom: 3px;
+  transform: translateX(-50%);
+}
+
+.diary-mag-months button[data-active="true"] i {
+  display: none;
+}

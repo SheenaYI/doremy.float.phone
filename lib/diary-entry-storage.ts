@@ -1,6 +1,7 @@
 import { kvGet, kvRemove, kvSet, registerKvMigration } from "./kv-db";
 import {
   DEFAULT_DIARY_ENTRY_TIMER_SETTINGS,
+  type DiaryAttachment,
   type DiaryEntry,
   type DiaryEntryBlock,
   type DiaryEntryInput,
@@ -76,6 +77,30 @@ function normalizeBlocks(value: unknown, fallbackBody = ""): DiaryEntryBlock[] {
       if (!block || typeof block !== "object") return null;
       const record = block as Record<string, unknown>;
       const type = cleanText(record.type, 32);
+      if (type === "highlight" || type === "mark" || type === "荧光") {
+        const text = cleanMultilineText(record.text ?? record.content, 900);
+        return text ? { type: "highlight", text } : null;
+      }
+      if (type === "bold" || type === "strong" || type === "着重") {
+        const text = cleanMultilineText(record.text ?? record.content, 900);
+        return text ? { type: "bold", text } : null;
+      }
+      if (type === "italic" || type === "em") {
+        const text = cleanMultilineText(record.text ?? record.content, 900);
+        return text ? { type: "italic", text } : null;
+      }
+      if (type === "ul" || type === "ol" || type === "bullet_list" || type === "ordered_list") {
+        const items = Array.isArray(record.items)
+          ? record.items.map(item => typeof item === "string" ? item : (item as Record<string, unknown>)?.text ?? (item as Record<string, unknown>)?.content ?? "").map(item => cleanText(item, 300)).filter(Boolean).slice(0, 20)
+          : [];
+        if (items.length === 0) return null;
+        return {
+          type: "list",
+          ordered: type === "ol" || type === "ordered_list" || record.ordered === true,
+          title: cleanText(record.title ?? record.heading, 40),
+          items,
+        };
+      }
       if (type === "todo" || type === "todos" || type === "list") {
         const items = normalizeTodoItems(record.items ?? record.todos ?? record.list);
         if (items.length === 0) return null;
@@ -122,6 +147,79 @@ function normalizeBlocks(value: unknown, fallbackBody = ""): DiaryEntryBlock[] {
     .filter(Boolean)
     .slice(0, 10);
   return paragraphs.map(text => ({ type: "paragraph", text }));
+}
+
+function normalizeAttachments(value: unknown): DiaryAttachment[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((raw): DiaryAttachment | null => {
+      if (!raw || typeof raw !== "object") return null;
+      const record = raw as Record<string, unknown>;
+      const type = cleanText(record.type, 20);
+      const id = cleanText(record.id, 120) || `diary_attachment_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+      const createdAt = typeof record.createdAt === "string" ? record.createdAt : new Date().toISOString();
+      if (type === "chat") {
+        const excerpt = cleanMultilineText(record.excerpt, 1600);
+        if (!excerpt) return null;
+        return {
+          id,
+          type: "chat",
+          sessionId: cleanText(record.sessionId, 160),
+          messageIds: Array.isArray(record.messageIds)
+            ? record.messageIds.map(item => cleanText(item, 160)).filter(Boolean).slice(0, 12)
+            : [],
+          excerpt,
+          role: record.role === "assistant" ? "assistant" : record.role === "user" ? "user" : undefined,
+          createdAt,
+        };
+      }
+      if (type === "music") {
+        const title = cleanText(record.title, 100);
+        if (!title) return null;
+        return {
+          id,
+          type: "music",
+          title,
+          artist: cleanText(record.artist, 100),
+          coverUrl: cleanText(record.coverUrl, 500) || undefined,
+          trackId: cleanText(record.trackId, 120) || undefined,
+          note: cleanText(record.note, 300) || undefined,
+          createdAt,
+        };
+      }
+      if (type === "photo") {
+        const mediaRef = cleanText(record.mediaRef, 512);
+        if (!mediaRef) return null;
+        return {
+          id,
+          type: "photo",
+          mediaRef,
+          caption: cleanText(record.caption, 100) || undefined,
+          createdAt,
+        };
+      }
+      if (type === "experience") {
+        const title = cleanText(record.title, 100);
+        const experienceId = cleanText(record.experienceId, 160);
+        const date = cleanText(record.date, 10);
+        if (!title || !experienceId || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
+        return {
+          id,
+          type: "experience",
+          ownerType: record.ownerType === "user" ? "user" : "character",
+          ownerId: cleanText(record.ownerId, 160),
+          date,
+          experienceId,
+          title,
+          startTime: cleanText(record.startTime, 5) || undefined,
+          note: cleanText(record.note, 400) || undefined,
+          createdAt,
+        };
+      }
+      return null;
+    })
+    .filter((item): item is DiaryAttachment => Boolean(item))
+    .slice(0, 8);
 }
 
 function formatDateLabel(value: string): string {
@@ -191,6 +289,7 @@ export function normalizeDiaryEntry(raw: unknown): DiaryEntry | null {
     tags: normalizeTags(record.tags ?? record.labels),
     body: body || blocks.map(block => block.type === "paragraph" || block.type === "quote" ? block.text : "").filter(Boolean).join("\n\n"),
     blocks,
+    attachments: normalizeAttachments(record.attachments),
     trigger: normalizeTrigger(record.trigger),
     createdAt,
     updatedAt: typeof record.updatedAt === "string"
@@ -241,12 +340,24 @@ export function createDiaryEntry(input: DiaryEntryInput): DiaryEntry {
     tags: normalizeTags(input.tags),
     body,
     blocks: normalizeBlocks(input.blocks, body),
+    attachments: normalizeAttachments(input.attachments),
     trigger: input.trigger ?? "manual",
     createdAt: now,
     updatedAt: now,
   };
   saveDiaryEntries([entry, ...loadDiaryEntries()]);
   return entry;
+}
+
+export function updateDiaryEntry(id: string, patch: Partial<DiaryEntry>): DiaryEntry | null {
+  if (!id) return null;
+  const entries = loadDiaryEntries();
+  const current = entries.find(entry => entry.id === id);
+  if (!current) return null;
+  const next = normalizeDiaryEntry({ ...current, ...patch, updatedAt: new Date().toISOString() });
+  if (!next) return null;
+  saveDiaryEntries(entries.map(entry => entry.id === id ? next : entry));
+  return next;
 }
 
 export function deleteDiaryEntry(id: string): void {

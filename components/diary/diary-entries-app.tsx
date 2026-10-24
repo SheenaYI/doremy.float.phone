@@ -1,13 +1,18 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent, type PointerEvent } from "react";
-import { Bot, ChevronLeft, Clock3, NotebookPen, Trash2, WandSparkles, X } from "lucide-react";
+import { Bot, ChevronLeft, Clock3, Music2, NotebookPen, Trash2, WandSparkles, X } from "lucide-react";
 import { DotsThree } from "@phosphor-icons/react";
 
 import { loadCharacters } from "@/lib/character-storage";
 import type { Character } from "@/lib/character-types";
 import { generateDiaryEntryForCharacter } from "@/lib/diary-entry-engine";
 import { useDiaryGenerating } from "@/lib/diary-generating-tracker";
+import { DiaryAttachmentPicker } from "./attachment-picker";
+import { CalendarMediaImage } from "@/components/calendar/media-image";
+import { DiaryBlockView } from "./block-view";
+import { DiaryMagazineArticle } from "./magazine-article";
+import { DiaryArchiveBoard } from "./archive-board";
 import {
   DIARY_ENTRIES_UPDATED_EVENT,
   DIARY_ENTRY_TIMER_SETTINGS_UPDATED_EVENT,
@@ -22,8 +27,9 @@ import {
   saveDiaryEntryFontAssetId,
   saveDiaryEntryFontScale,
   saveDiaryEntryTimerSettings,
+  updateDiaryEntry,
 } from "@/lib/diary-entry-storage";
-import type { DiaryEntry, DiaryEntryBlock, DiaryEntryTimerSettings, DiaryEntryTrigger } from "@/lib/diary-entry-types";
+import type { DiaryAttachment, DiaryEntry, DiaryEntryBlock, DiaryEntryTimerSettings, DiaryEntryTrigger } from "@/lib/diary-entry-types";
 import { getThemeAssetDataUrl, saveThemeAssetFromBlob } from "@/lib/theme-storage";
 
 const DIARY_USER_FONT_FAMILY = "AIPhoneDiaryEntryUserFont";
@@ -85,9 +91,10 @@ function clipText(value: string, maxLength: number): string {
 }
 
 function blockPlainText(block: DiaryEntryBlock): string {
-  if (block.type === "paragraph" || block.type === "quote") return block.text;
+  if (block.type === "paragraph" || block.type === "quote" || block.type === "highlight" || block.type === "bold" || block.type === "italic") return block.text;
   if (block.type === "correction") return block.replacement || block.text;
   if (block.type === "image") return block.caption || block.description;
+  if (block.type === "list") return [block.title, block.items.join(" / ")].filter(Boolean).join(" ");
   if (block.type === "todo") return block.items.map(item => item.text).join(" / ");
   return "";
 }
@@ -239,6 +246,13 @@ export function DiaryEntriesApp({ onBack, onNotice }: DiaryEntriesAppProps) {
     refreshEntries();
     notify(`已删除 ${entry.characterName} 的日记。`);
   }, [notify, refreshEntries]);
+
+  const updateAttachments = useCallback((entry: DiaryEntry, attachments: DiaryAttachment[]) => {
+    const next = updateDiaryEntry(entry.id, { attachments });
+    if (!next) return;
+    refreshEntries();
+    setActiveEntry(next);
+  }, [refreshEntries]);
 
   useEffect(() => {
     setCharacters(loadCharacters());
@@ -608,8 +622,8 @@ export function DiaryEntriesApp({ onBack, onNotice }: DiaryEntriesAppProps) {
           <ChevronLeft size={20} />
         </button>
         <div>
-          <h1>{activeBook ? `${activeBook.characterName} 的日记` : "日记"}</h1>
-          <p>{activeBook ? `共 ${activeBook.entries.length} 篇手写日常` : "每个角色一本，点开翻阅"}</p>
+          <h1>{activeBook ? "MY LIFE" : "手记"}</h1>
+          <p>{activeBook ? `${activeBook.characterName} · 共 ${activeBook.entries.length} 篇` : "每个角色一本私人刊物"}</p>
         </div>
         <input
           ref={fontFileRef}
@@ -643,43 +657,13 @@ export function DiaryEntriesApp({ onBack, onNotice }: DiaryEntriesAppProps) {
             <button type="button" onClick={() => setWritePanelOpen(true)}>让TA写一篇</button>
           </div>
         ) : activeBook ? (
-          <div className="diary-entry-list">
-            {activeBook.entries.map(entry => (
-              <DiaryEntryCard
-                key={entry.id}
-                entry={entry}
-                isDragSource={entryDrag?.entry.id === entry.id}
-                onPointerDown={(event) => handleEntryPointerDown(event, entry)}
-                onPointerMove={handleEntryPointerMove}
-                onPointerUp={handleEntryPointerUp}
-                onPointerCancel={handleEntryPointerCancel}
-                onPointerLeave={handleEntryPointerLeave}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  if (entryDragClickSuppressedRef.current) {
-                    event.preventDefault();
-                    return;
-                  }
-                  setActiveEntry(entry);
-                }}
-              />
-            ))}
-          </div>
+          <DiaryMagazineIssue book={activeBook} onOpen={setActiveEntry} />
         ) : (
-          <div className="diary-shelf">
-            {[0, 1].map(column => (
-              <div className="diary-shelf-column" key={column}>
-                {books.filter((_, index) => index % 2 === column).map(book => (
-                  <DiaryBookCover
-                    key={book.characterId}
-                    book={book}
-                    busy={generatingCharacterIds.includes(book.characterId)}
-                    onOpen={() => setActiveCharacterId(book.characterId)}
-                  />
-                ))}
-              </div>
-            ))}
-          </div>
+          <DiaryArchiveBoard
+            books={books}
+            busyIds={generatingCharacterIds}
+            onOpen={book => setActiveCharacterId(book.characterId)}
+          />
         )}
       </main>
 
@@ -734,7 +718,13 @@ export function DiaryEntriesApp({ onBack, onNotice }: DiaryEntriesAppProps) {
       ) : null}
 
       {activeEntry ? (
-        <DiaryEntryDetail entry={activeEntry} onClose={() => setActiveEntry(null)} />
+        <DiaryMagazineArticle
+          entry={activeEntry}
+          onClose={() => setActiveEntry(null)}
+          onDelete={() => deleteEntry(activeEntry)}
+          onUpdateAttachments={(attachments) => updateAttachments(activeEntry, attachments)}
+          onNotice={notify}
+        />
       ) : null}
 
       {deleteCandidateEntry ? (
@@ -788,40 +778,114 @@ export function DiaryEntriesApp({ onBack, onNotice }: DiaryEntriesAppProps) {
   );
 }
 
-const DIARY_BOOK_COVER_COUNT = 6;
+function DiaryMagazineIssue({ book, onOpen }: { book: DiaryBook; onOpen: (entry: DiaryEntry) => void }) {
+  const entries = book.entries;
+  const latest = entries[0];
+  const latestDate = latest ? new Date(latest.createdAt) : new Date();
+  const [year, setYear] = useState(() => latestDate.getFullYear());
+  const [month, setMonth] = useState(() => latestDate.getMonth() + 1);
+  const years = useMemo(() => {
+    const set = new Set<number>();
+    for (const entry of entries) {
+      const date = new Date(entry.createdAt);
+      if (!Number.isNaN(date.getTime())) set.add(date.getFullYear());
+    }
+    set.add(new Date().getFullYear());
+    set.add(latestDate.getFullYear());
+    return [...set].sort((a, b) => b - a);
+  }, [entries, latestDate]);
+  const monthEntries = useMemo(
+    () => entries.filter(entry => {
+      const date = new Date(entry.createdAt);
+      return date.getFullYear() === year && date.getMonth() + 1 === month;
+    }),
+    [entries, year, month],
+  );
+  const monthCounts = useMemo(() => {
+    const map = new Map<number, number>();
+    for (const entry of entries) {
+      const date = new Date(entry.createdAt);
+      if (date.getFullYear() !== year) continue;
+      const value = date.getMonth() + 1;
+      map.set(value, (map.get(value) ?? 0) + 1);
+    }
+    return map;
+  }, [entries, year]);
+  const monthName = ["JANUARY", "FEBRUARY", "MARCH", "APRIL", "MAY", "JUNE", "JULY", "AUGUST", "SEPTEMBER", "OCTOBER", "NOVEMBER", "DECEMBER"][month - 1];
+  const monthCn = ["一月", "二月", "三月", "四月", "五月", "六月", "七月", "八月", "九月", "十月", "十一月", "十二月"][month - 1];
 
-function hashText(value: string): number {
-  let hash = 0;
-  for (let index = 0; index < value.length; index += 1) {
-    hash = (hash * 31 + value.charCodeAt(index)) >>> 0;
-  }
-  return hash;
-}
-
-function DiaryBookCover({ book, busy, onOpen }: { book: DiaryBook; busy: boolean; onOpen: () => void }) {
-  const hash = hashText(book.characterId);
-  const latest = book.entries[0];
   return (
-    <button
-      type="button"
-      className="diary-book"
-      data-cover={hash % DIARY_BOOK_COVER_COUNT}
-      onClick={onOpen}
-    >
-      <span className="diary-book-spine" aria-hidden="true" />
-      <span className="diary-book-frame" aria-hidden="true" />
-      <span className="diary-book-label">
-        <span className="diary-book-avatar">
-          {book.avatar ? <img src={book.avatar} alt="" /> : <Bot size={20} />}
-        </span>
-        <strong>{book.characterName}</strong>
-        <em>{busy ? <DiaryWritingStatus /> : "的日记本"}</em>
-      </span>
-      <span className="diary-book-meta">
-        <span>{book.entries.length} 篇</span>
-        <time>{formatEntryTime(latest.createdAt)}</time>
-      </span>
-    </button>
+    <div className="diary-magazine-issue">
+      <div className="diary-mag-years hide-scrollbar">
+        {years.map(item => (
+          <button key={item} type="button" data-active={item === year ? "true" : undefined} onClick={() => setYear(item)}>
+            {item}
+          </button>
+        ))}
+      </div>
+      <div className="diary-mag-months hide-scrollbar">
+        {Array.from({ length: 12 }, (_, index) => index + 1).map(item => (
+          <button
+            key={item}
+            type="button"
+            data-active={item === month ? "true" : undefined}
+            data-has={monthCounts.get(item) ? "true" : undefined}
+            onClick={() => setMonth(item)}
+          >
+            {String(item).padStart(2, "0")}
+            {monthCounts.get(item) ? <i>{monthCounts.get(item)}</i> : null}
+          </button>
+        ))}
+      </div>
+
+      <section className="diary-issue-cover">
+        <span className="diary-issue-kicker">PRIVATE JOURNAL / {year}</span>
+        <h2>MY LIFE</h2>
+        <div className="diary-issue-meta">
+          <span>ISSUE <b>{String(month).padStart(2, "0")}</b></span>
+          <span>{book.characterName}</span>
+        </div>
+        <div className="diary-issue-month">
+          <strong>{monthName}</strong>
+          <em>{monthCn}记事</em>
+        </div>
+        <div className="diary-issue-list">
+          {monthEntries.slice(0, 4).map((entry, index) => (
+            <button key={entry.id} type="button" onClick={() => onOpen(entry)}>
+              <b>{String(index + 1).padStart(2, "0")}</b>
+              <span>{entry.title || "未命名手记"}</span>
+            </button>
+          ))}
+          {monthEntries.length === 0 ? <p>这个月还没有手记。</p> : null}
+        </div>
+        <div className="diary-issue-foot">
+          <span>VOL. {year} / {String(month).padStart(2, "0")}</span>
+          <span>{monthEntries.length} ENTRIES</span>
+        </div>
+      </section>
+
+      <section className="diary-issue-toc">
+        <header>
+          <span>CONTENTS</span>
+          <b>{monthCn}</b>
+        </header>
+        {monthEntries.length === 0 ? (
+          <p className="diary-issue-empty">这个月还没有留下手记。</p>
+        ) : (
+          <div className="diary-issue-toc-list">
+            {monthEntries.map((entry, index) => (
+              <button key={entry.id} type="button" onClick={() => onOpen(entry)}>
+                <b>{String(index + 1).padStart(2, "0")}</b>
+                <div>
+                  <strong>{entry.title || "未命名手记"}</strong>
+                  <em>{formatEntryTime(entry.createdAt)}</em>
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
+      </section>
+    </div>
   );
 }
 
@@ -1113,8 +1177,10 @@ function CharacterAvatarGrid({ characters, selectedIds, busyIds, disabled, onTog
   );
 }
 
-function DiaryEntryDetail({ entry, onClose }: { entry: DiaryEntry; onClose: () => void }) {
+function DiaryEntryDetail({ entry, onClose, onDelete, onUpdateAttachments, onNotice }: { entry: DiaryEntry; onClose: () => void; onDelete: () => void; onUpdateAttachments: (attachments: DiaryAttachment[]) => void; onNotice?: (message: string) => void }) {
   const markers = getEntryMarkers(entry);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const attachments = entry.attachments ?? [];
   return (
     <div className="nw-modal-backdrop" role="dialog" aria-modal="true" onClick={onClose}>
       <article className="diary-entry-detail-paper" onClick={(event) => event.stopPropagation()}>
@@ -1128,6 +1194,7 @@ function DiaryEntryDetail({ entry, onClose }: { entry: DiaryEntry; onClose: () =
               <h2>{entry.title}</h2>
             </div>
             <div className="diary-entry-detail-top">
+              <button type="button" className="diary-entry-detail-delete" onClick={onDelete}>删除</button>
               <button type="button" onClick={onClose}>关闭</button>
               {markers.length > 0 ? (
                 <span className="diary-entry-detail-markers">
@@ -1141,50 +1208,77 @@ function DiaryEntryDetail({ entry, onClose }: { entry: DiaryEntry; onClose: () =
               <DiaryBlockView key={`${block.type}-${index}`} block={block} />
             ))}
           </div>
+          <section className="diary-attachment-section">
+            <header>
+              <strong>今日留下的痕迹</strong>
+              <button type="button" onClick={() => setPickerOpen(true)}>添加纪念</button>
+            </header>
+            {attachments.length === 0 ? (
+              <p className="diary-attachment-empty">可以关联一段聊天、一首歌、一张照片，或日历里的一条经历。</p>
+            ) : (
+              <div className="diary-attachment-list">
+                {attachments.map(attachment => (
+                  <article key={attachment.id} className="diary-attachment-card" data-type={attachment.type}>
+                    <button
+                      type="button"
+                      className="diary-attachment-remove"
+                      onClick={() => onUpdateAttachments(attachments.filter(item => item.id !== attachment.id))}
+                      aria-label="移除关联"
+                    >
+                      <X size={13} />
+                    </button>
+                    {attachment.type === "chat" ? (
+                      <>
+                        <span className="diary-attachment-eyebrow">💬 一段聊天</span>
+                        <blockquote>{attachment.excerpt}</blockquote>
+                        <em>{attachment.role === "assistant" ? "TA 说的" : "我说的"}</em>
+                      </>
+                    ) : null}
+                    {attachment.type === "music" ? (
+                      <div className="diary-attachment-music">
+                        {attachment.coverUrl ? <img src={attachment.coverUrl} alt="" /> : <span><Music2 size={18} /></span>}
+                        <div>
+                          <span className="diary-attachment-eyebrow">🎵 一起听过</span>
+                          <strong>{attachment.title}</strong>
+                          <em>{attachment.artist}</em>
+                        </div>
+                      </div>
+                    ) : null}
+                    {attachment.type === "photo" ? (
+                      <>
+                        <span className="diary-attachment-eyebrow">📷 一张照片</span>
+                        <CalendarMediaImage mediaRef={attachment.mediaRef} alt={attachment.caption || "手记照片"} className="diary-attachment-photo" />
+                        {attachment.caption ? <em>{attachment.caption}</em> : null}
+                      </>
+                    ) : null}
+                    {attachment.type === "experience" ? (
+                      <>
+                        <span className="diary-attachment-eyebrow">🗓️ 一条经历</span>
+                        <strong>{attachment.title}</strong>
+                        <em>{attachment.date}{attachment.startTime ? ` · ${attachment.startTime}` : ""}</em>
+                        {attachment.note ? <p>{attachment.note}</p> : null}
+                      </>
+                    ) : null}
+                  </article>
+                ))}
+              </div>
+            )}
+          </section>
+
           <footer className="diary-entry-detail-signature">
             <span>{entry.characterName}</span>
             <time>{formatEntryTime(entry.createdAt)}</time>
           </footer>
         </div>
+        {pickerOpen ? (
+          <DiaryAttachmentPicker
+            characterId={entry.characterId}
+            onAdd={(attachment) => onUpdateAttachments([...attachments, attachment])}
+            onClose={() => setPickerOpen(false)}
+            onNotice={onNotice}
+          />
+        ) : null}
       </article>
     </div>
   );
-}
-
-function DiaryBlockView({ block }: { block: DiaryEntryBlock }) {
-  if (block.type === "quote") {
-    return <blockquote className="diary-entry-quote">{block.text}</blockquote>;
-  }
-  if (block.type === "correction") {
-    return (
-      <p className="diary-entry-correction">
-        <del>{block.text}</del>
-        {block.replacement ? <ins>{block.replacement}</ins> : null}
-      </p>
-    );
-  }
-  if (block.type === "todo") {
-    return (
-      <section className="diary-entry-todo">
-        {block.title ? <h3>{block.title}</h3> : null}
-        <ul>
-          {block.items.map((item, index) => (
-            <li key={`${item.text}-${index}`} data-done={item.done ? "true" : "false"}>
-              <span />
-              <p>{item.text}</p>
-            </li>
-          ))}
-        </ul>
-      </section>
-    );
-  }
-  if (block.type === "image") {
-    return (
-      <figure className="diary-entry-image-block">
-        <div>{block.description}</div>
-        {block.caption ? <figcaption>{block.caption}</figcaption> : null}
-      </figure>
-    );
-  }
-  return <p className="diary-entry-paragraph">{block.text}</p>;
 }

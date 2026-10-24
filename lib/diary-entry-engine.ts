@@ -12,6 +12,17 @@ import { formatDiaryEntryContext, parseDiaryEntryContent, type ParsedDiaryEntry 
 import type { DiaryEntry, DiaryEntryTrigger } from "./diary-entry-types";
 import { beginDiaryGeneration, endDiaryGeneration } from "./diary-generating-tracker";
 
+const DIARY_RICH_MEDIA_INSTRUCTION = [
+  "【手记排版补充指令】",
+  "输出 blocks 时不要所有内容都用 paragraph。",
+  "根据内容自然使用至少 2 种 block 类型：paragraph / quote / highlight / bold / italic / ul / ol / correction / todo / image。",
+  "例如：普通叙述用 paragraph；一句想记住的话用 highlight；清单用 ul/ol；涂改用 correction；待办用 todo；贴纸描述用 image。",
+  "不要为了形式硬塞，也不要输出 Markdown、HTML 或 CSS。",
+  "仍然只输出一个 JSON 对象，格式：",
+  '{"title":"标题","mood":"心情","weather":"天气","tags":["标签"],"body":"完整正文","blocks":[{"type":"paragraph","text":"段落"},{"type":"highlight","text":"高亮句"},{"type":"ul","title":"清单","items":["一项"]},{"type":"todo","title":"待办","items":[{"text":"事项","done":false}]}]}',
+  "blocks 最多 8 个；正文必须能从 blocks 中读出来。",
+].join("\n");
+
 type ResolvedDiaryEntryGeneration = {
   character: Character;
   apiConfig: ApiConfig;
@@ -94,7 +105,7 @@ export async function generateDiaryEntryForCharacter(
     const raw = await sendLLMRequest(
       resolved.apiConfig,
       resolved.preset,
-      resolved.messages,
+      [...resolved.messages, { role: "system", content: DIARY_RICH_MEDIA_INSTRUCTION }],
       resolved.regexes,
       { characterName: `日记:${resolved.character.name}`, userName: resolved.userName },
       { appId: "diary", appTags: ["diary", "entries"] },
@@ -111,7 +122,10 @@ export async function previewDiaryEntryPromptPayload(
 ): Promise<{ messages: LLMMessage[]; characterName: string; model: string; presetName: string }> {
   const resolved = await resolveDiaryEntryGeneration(characterId, entries);
   return {
-    messages: previewMessagesForApi(resolved.apiConfig, resolved.preset, resolved.messages),
+    messages: previewMessagesForApi(resolved.apiConfig, resolved.preset, [
+      ...resolved.messages,
+      { role: "system", content: DIARY_RICH_MEDIA_INSTRUCTION },
+    ]),
     characterName: `日记:${resolved.character.name}`,
     model: resolved.apiConfig.defaultModel,
     presetName: resolved.preset?.name ?? "默认预设",
