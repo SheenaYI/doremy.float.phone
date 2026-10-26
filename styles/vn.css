@@ -1369,44 +1369,74 @@
   color: #9b8e7b;
 }
 
-/* 星空图上的合册节点 */
+/* 星空图上的合册节点：涟漪环，区别于单章星体 */
 .vnc-volume-node {
   position: absolute;
   transform: translate(-50%, -50%);
-  width: 158px;
-  min-height: 92px;
-  border: 1px solid rgba(255, 238, 204, .28);
-  border-radius: 3px;
-  padding: 9px 10px;
-  background:
-    linear-gradient(160deg, rgba(255,248,232,.16), rgba(20,16,28,.78)),
-    rgba(20,16,28,.7);
+  width: 150px;
+  min-height: 124px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 0;
+  border: 0;
+  background: transparent;
   color: rgba(255,246,228,.9);
-  text-align: left;
-  box-shadow: 0 8px 26px rgba(0,0,0,.28);
+  text-align: center;
   cursor: pointer;
   z-index: 3;
 }
-.vnc-volume-node:active { transform: translate(-50%, -50%) scale(.97); }
-.vnc-volume-node > span {
-  display: block;
+.vnc-volume-node:active { transform: translate(-50%, -50%) scale(.96); }
+.vnc-volume-orbit {
+  position: relative;
+  width: 66px;
+  height: 66px;
+  margin-bottom: 3px;
+  display: grid;
+  place-items: center;
+}
+.vnc-volume-orbit::before,
+.vnc-volume-orbit::after {
+  content: "";
+  position: absolute;
+  inset: 7px;
+  border: 1px solid rgba(255, 219, 158, .42);
+  border-radius: 50%;
+  box-shadow: 0 0 18px rgba(216,179,106,.12);
+}
+.vnc-volume-orbit::after { inset: 17px; border-color: rgba(255, 231, 184, .28); }
+.vnc-volume-orbit i {
+  position: absolute;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 219, 158, .22);
+}
+.vnc-volume-orbit i:nth-child(1) { width: 54px; height: 54px; }
+.vnc-volume-orbit i:nth-child(2) { width: 40px; height: 40px; border-style: dashed; opacity: .65; }
+.vnc-volume-orbit i:nth-child(3) {
+  width: 9px;
+  height: 9px;
+  background: #f4d79e;
+  border: 0;
+  box-shadow: 0 0 16px rgba(244,215,158,.75);
+}
+.vnc-volume-kicker {
   font: 700 7px/1 "Helvetica Neue", Arial, sans-serif;
-  letter-spacing: .18em;
+  letter-spacing: .16em;
   color: rgba(255,220,169,.62);
 }
 .vnc-volume-node > b {
-  display: block;
-  margin: 5px 0 4px;
-  font: 700 14px/1.25 "Songti SC", "Noto Serif SC", serif;
+  max-width: 148px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font: 700 13px/1.25 "Songti SC", "Noto Serif SC", serif;
+  color: rgba(255,246,228,.92);
 }
 .vnc-volume-node > em {
-  display: block;
   font: 8px/1.3 "Helvetica Neue", Arial, sans-serif;
   font-style: normal;
-  color: rgba(255,238,204,.54);
+  color: rgba(255,238,204,.48);
 }
 
 /* 整理旧章 / 加载更早 */
@@ -1548,6 +1578,41 @@
 .vnc-volume-error {
   margin: 7px 0;
   color: #e59b8a;
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.vnc-orphan-notice {
+  position: absolute;
+  z-index: 45;
+  left: 50%;
+  top: calc(var(--page-header-safe-top, 48px) + 58px);
+  transform: translateX(-50%);
+  max-width: calc(100% - 32px);
+  padding: 8px 12px;
+  border: 1px solid var(--vn-ui-border);
+  border-radius: 999px;
+  background: rgba(10,8,16,.78);
+  color: var(--vn-ui-text);
+  font-size: 10px;
+  line-height: 1.4;
+  text-align: center;
+  backdrop-filter: blur(10px);
+  animation: vnc-notice-in .18s ease both;
+  pointer-events: none;
+}
+
+@keyframes vnc-notice-in {
+  from { opacity: 0; transform: translate(-50%, -4px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+
+.vnc-volume-progress {
+  margin: 7px 0;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: rgba(216,179,106,.1);
+  color: #d8b36a;
   font-size: 10px;
   line-height: 1.45;
 }

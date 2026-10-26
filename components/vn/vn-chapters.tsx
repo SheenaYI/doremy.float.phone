@@ -8,6 +8,7 @@ import {
   createVnVolume,
   loadVnVolumes,
   startNewChapter,
+  archiveChapter,
   updateChapterSummary,
   clearChapterSummary,
   loadVnMessagesForChapter,
@@ -54,8 +55,15 @@ export function VnChapters({ characterId, onClose, onSelect, vnTheme }: VnChapte
   const [volumeInMemory, setVolumeInMemory] = useState(true);
   const [volumeError, setVolumeError] = useState("");
   const [volumeTicket, setVolumeTicket] = useState<VnVolume | null>(null);
+  const [archivePromptIndex, setArchivePromptIndex] = useState<number | null>(null);
+  const [volumeProcessing, setVolumeProcessing] = useState(false);
+  const [volumeProgress, setVolumeProgress] = useState("");
+  const [selectHintOpen, setSelectHintOpen] = useState(false);
+  const [selectHintSeen, setSelectHintSeen] = useState(false);
   const [orphanChecking, setOrphanChecking] = useState(false);
   const [orphanChecked, setOrphanChecked] = useState(false);
+  const [orphanNotice, setOrphanNotice] = useState("");
+  const orphanNoticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const character = useMemo(() => {
     return loadCharacters().find((c) => c.id === characterId);
@@ -79,15 +87,24 @@ export function VnChapters({ characterId, onClose, onSelect, vnTheme }: VnChapte
     setOrphanChecking(true);
     setOrphanChecked(true);
     setRestoreError(null);
+    setOrphanNotice("");
+    if (orphanNoticeTimer.current) clearTimeout(orphanNoticeTimer.current);
     try {
       const groups = await listOrphanVnMessageGroups();
       setOrphanGroups(groups);
-      if (groups.length === 0) setRestoreError("没有发现无主剧情，当前数据正常。");
+      if (groups.length === 0) {
+        setOrphanNotice("没有发现无主剧情，当前数据正常。");
+        orphanNoticeTimer.current = setTimeout(() => setOrphanNotice(""), 3200);
+      }
     } catch (err) {
       setRestoreError(err instanceof Error ? err.message : "检查无主剧情失败");
     } finally {
       setOrphanChecking(false);
     }
+  }, []);
+
+  useEffect(() => () => {
+    if (orphanNoticeTimer.current) clearTimeout(orphanNoticeTimer.current);
   }, []);
 
   const lastChapter = chapters.length > 0 ? chapters[chapters.length - 1] : null;
@@ -182,7 +199,11 @@ export function VnChapters({ characterId, onClose, onSelect, vnTheme }: VnChapte
     [chapters, selectedChapterIds],
   );
   const toggleChapterSelection = (chapter: (typeof chapters)[number]) => {
-    if (!chapter.archived || chapter.volumeId) return;
+    if (chapter.volumeId) return;
+    if (!chapter.archived) {
+      setArchivePromptIndex(chapter.index);
+      return;
+    }
     setSelectedChapterIds(current => {
       const next = new Set(current);
       if (next.has(chapter.id)) next.delete(chapter.id);
@@ -200,32 +221,58 @@ export function VnChapters({ characterId, onClose, onSelect, vnTheme }: VnChapte
     setVolumeError("");
     setVolumeDraftOpen(true);
   };
-  const handleCreateVolume = () => {
-    if (selectedChapters.length === 0) return;
-    const missing = selectedChapters.filter(chapter => !chapter.summaryContent?.trim());
-    if (missing.length > 0) {
-      setVolumeError(`这些章节还没有总结，请先生成：${missing.map(chapter => chapter.title).join("、")}`);
-      return;
+  const handleCreateVolume = async () => {
+    if (selectedChapters.length === 0 || volumeProcessing) return;
+    const ids = selectedChapters.map(chapter => chapter.id);
+    setVolumeProcessing(true);
+    setVolumeError("");
+    try {
+      // 先把未归档/未总结的章节补齐；合册读取的是补完后的 live session。
+      for (const id of ids) {
+        const chapter = createOrGetVnSession(characterId).chapters.find(item => item.id === id);
+        if (!chapter) continue;
+        if (!chapter.archived) {
+          setVolumeProgress(`归档「${chapter.title}」…`);
+          archiveChapter(liveSession.id, chapter.index);
+        }
+        const fresh = createOrGetVnSession(characterId).chapters.find(item => item.id === id);
+        if (fresh && !fresh.summaryContent?.trim()) {
+          setVolumeProgress(`生成「${fresh.title}」的章节总结…`);
+          const messages = loadVnMessagesForChapter(liveSession.id, fresh.index);
+          if (messages.length === 0) throw new Error(`「${fresh.title}」没有可总结的消息，无法合册`);
+          const summary = await summarizeVnChapter(characterId, messages);
+          updateChapterSummary(liveSession.id, fresh.index, summary, { inMemory: volumeInMemory });
+        }
+      }
+      const current = createOrGetVnSession(characterId);
+      const chapterList = ids
+        .map(id => current.chapters.find(chapter => chapter.id === id))
+        .filter((chapter): chapter is (typeof current.chapters)[number] => Boolean(chapter));
+      const missing = chapterList.filter(chapter => !chapter.summaryContent?.trim());
+      if (missing.length > 0) throw new Error(`这些章节没有总结：${missing.map(chapter => chapter.title).join("、")}`);
+      setVolumeProgress("生成合册…");
+      const summary = chapterList
+        .map(chapter => `${chapter.title}：${chapter.summaryContent?.trim() ?? ""}`)
+        .join("\n\n");
+      const volume = createVnVolume(liveSession.id, {
+        chapterIds: ids,
+        title: volumeTitle,
+        summary,
+        deleteMessages: volumeDeleteMessages,
+        summaryInMemory: volumeInMemory,
+      });
+      if (!volume) throw new Error("合册失败：章节状态已变化，请重试");
+      setVolumeDraftOpen(false);
+      setSelectMode(false);
+      setSelectedChapterIds(new Set());
+      setVolumeTicket(volume);
+      forceUpdate(n => n + 1);
+    } catch (err) {
+      setVolumeError(err instanceof Error ? err.message : "合册失败");
+    } finally {
+      setVolumeProcessing(false);
+      setVolumeProgress("");
     }
-    const summary = selectedChapters
-      .map(chapter => `${chapter.title}：${chapter.summaryContent?.trim() ?? ""}`)
-      .join("\n\n");
-    const volume = createVnVolume(liveSession.id, {
-      chapterIds: selectedChapters.map(chapter => chapter.id),
-      title: volumeTitle,
-      summary,
-      deleteMessages: volumeDeleteMessages,
-      summaryInMemory: volumeInMemory,
-    });
-    if (!volume) {
-      setVolumeError("合册失败：只有已归档章节可以合并");
-      return;
-    }
-    setVolumeDraftOpen(false);
-    setSelectMode(false);
-    setSelectedChapterIds(new Set());
-    setVolumeTicket(volume);
-    forceUpdate(n => n + 1);
   };
 
   const nodeSpacing = 120;
@@ -592,6 +639,10 @@ export function VnChapters({ characterId, onClose, onSelect, vnTheme }: VnChapte
             className="vnc-btn"
             title="整理旧章节"
             onClick={() => {
+              if (!selectMode && !selectHintSeen) {
+                setSelectHintOpen(true);
+                setSelectHintSeen(true);
+              }
               setSelectMode(value => !value);
               setSelectedChapterIds(new Set());
             }}
@@ -603,6 +654,10 @@ export function VnChapters({ characterId, onClose, onSelect, vnTheme }: VnChapte
           </button>
         </div>
       </div>
+
+      {orphanNotice ? (
+        <div className="vnc-orphan-notice" role="status">{orphanNotice}</div>
+      ) : null}
 
       {/* ── 无主剧情恢复 ── */}
       {(orphanGroups.length > 0 || (orphanChecked && restoreError)) && (
@@ -664,9 +719,12 @@ export function VnChapters({ characterId, onClose, onSelect, vnTheme }: VnChapte
                   style={{ left: `${x}%`, top: y }}
                   onClick={() => setVolumeTicket(item.volume)}
                 >
-                  <span>ARCHIVE · {item.chapters.length} CHAPTERS</span>
+                  <span className="vnc-volume-orbit" aria-hidden="true">
+                    <i /><i /><i />
+                  </span>
+                  <span className="vnc-volume-kicker">合册 · {item.chapters.length} 章</span>
                   <b>{item.volume.title}</b>
-                  <em>{item.volume.messagesCleared ? "正文已清理 · 仅保留摘要" : "旧章合册"}</em>
+                  <em>{item.volume.messagesCleared ? "仅保留摘要" : "旧章归档"}</em>
                 </button>
               );
             }
@@ -768,6 +826,55 @@ export function VnChapters({ characterId, onClose, onSelect, vnTheme }: VnChapte
         </div>
       ) : null}
 
+      {selectHintOpen ? (
+        <div className="vnc-confirm-overlay" onClick={() => setSelectHintOpen(false)}>
+          <article className="vnc-confirm-card" onClick={(event) => event.stopPropagation()}>
+            <div className="vnc-confirm-title">选择旧章节</div>
+            <div className="vnc-confirm-desc">
+              直接点击章节节点即可选择；选好后点底部「合并成册」。<br />
+              未归档的章节会先询问是否归档，合册时会自动补章节总结。
+            </div>
+            <div className="vnc-confirm-btns">
+              <button className="vnc-confirm-btn" onClick={() => setSelectHintOpen(false)}>知道了</button>
+            </div>
+          </article>
+        </div>
+      ) : null}
+
+      {archivePromptIndex !== null ? (() => {
+        const chapter = chapters[archivePromptIndex];
+        return (
+          <div className="vnc-confirm-overlay" onClick={() => setArchivePromptIndex(null)}>
+            <article className="vnc-confirm-card" onClick={(event) => event.stopPropagation()}>
+              <div className="vnc-confirm-title">「{chapter?.title ?? "本章"}」还没有归档</div>
+              <div className="vnc-confirm-desc">
+                归档后才能加入合册。现在归档会结束该章节；合册时会自动生成章节总结。
+              </div>
+              <div className="vnc-confirm-btns">
+                <button className="vnc-confirm-btn" onClick={() => setArchivePromptIndex(null)}>取消</button>
+                <button
+                  className="vnc-confirm-btn"
+                  onClick={() => {
+                    if (archivePromptIndex === null) return;
+                    archiveChapter(liveSession.id, archivePromptIndex);
+                    setSelectedChapterIds(current => {
+                      const next = new Set(current);
+                      const id = chapters[archivePromptIndex]?.id;
+                      if (id) next.add(id);
+                      return next;
+                    });
+                    setArchivePromptIndex(null);
+                    forceUpdate(n => n + 1);
+                  }}
+                >
+                  先归档并选择
+                </button>
+              </div>
+            </article>
+          </div>
+        );
+      })() : null}
+
       {volumeDraftOpen ? (
         <div className="vnc-confirm-overlay" onClick={() => setVolumeDraftOpen(false)}>
           <article className="vnc-confirm-card" onClick={(event) => event.stopPropagation()}>
@@ -800,10 +907,13 @@ export function VnChapters({ characterId, onClose, onSelect, vnTheme }: VnChapte
               />
               <span>删除这些章节的正文消息<em>只保留章节摘要；之后不能再回放原文</em></span>
             </label>
+            {volumeProgress ? <div className="vnc-volume-progress">{volumeProgress}</div> : null}
             {volumeError ? <div className="vnc-volume-error">{volumeError}</div> : null}
             <div className="vnc-confirm-btns">
-              <button className="vnc-confirm-btn" onClick={() => setVolumeDraftOpen(false)}>取消</button>
-              <button className="vnc-confirm-btn" onClick={handleCreateVolume}>确认合册</button>
+              <button className="vnc-confirm-btn" disabled={volumeProcessing} onClick={() => setVolumeDraftOpen(false)}>取消</button>
+              <button className="vnc-confirm-btn" disabled={volumeProcessing} onClick={() => void handleCreateVolume()}>
+                {volumeProcessing ? "处理中…" : "确认合册"}
+              </button>
             </div>
           </article>
         </div>
