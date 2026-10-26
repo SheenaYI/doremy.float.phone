@@ -21,12 +21,38 @@ import {
 import { resolveAuxiliaryApiConfig } from "./settings-storage";
 import { loadNativeTimeline, formatTimelineForSummarization, filterTimelineByAllowedSources } from "./short-term-assembler";
 import { generateEmbedding, resolveEmbeddingModel } from "./memory-embedding";
+import { kvGet, kvSet } from "./kv-db";
 import { simpleLLMCall } from "./api-helpers";
 import { maybeRunCoreMemoryPipeline } from "./core-memory-builder";
 import { buildRoomSpecText, extractMemoryTags, parseRoomSections, ROOM_ENTRY_LIMIT_MULTIPLIER } from "./memory-room";
+import { resolveMemoryTags } from "./memory-tag-registry";
 
 /** Per-character lock to prevent concurrent summarization. */
 const summarizingSet = new Set<string>();
+const SUMMARY_BACKOFF_PREFIX = "ai_phone_mem_summary_backoff_";
+
+type SummaryBackoff = { failures: number; nextAt: number };
+
+function readBackoff(characterId: string): SummaryBackoff {
+    try {
+        const raw = kvGet(`${SUMMARY_BACKOFF_PREFIX}${characterId}`);
+        const parsed = raw ? JSON.parse(raw) as Partial<SummaryBackoff> : null;
+        return {
+            failures: Math.max(0, Number(parsed?.failures) || 0),
+            nextAt: Math.max(0, Number(parsed?.nextAt) || 0),
+        };
+    } catch {
+        return { failures: 0, nextAt: 0 };
+    }
+}
+
+function writeBackoff(characterId: string, state: SummaryBackoff): void {
+    kvSet(`${SUMMARY_BACKOFF_PREFIX}${characterId}`, JSON.stringify(state));
+}
+
+function clearBackoff(characterId: string): void {
+    writeBackoff(characterId, { failures: 0, nextAt: 0 });
+}
 
 /**
  * Check if summarization should run based on event counter, then execute.
@@ -43,10 +69,29 @@ export async function maybeRunSummarization(
     const counter = getEventCounter(characterId);
     if (counter < config.summarizationEventInterval) return;
 
+    const backoff = readBackoff(characterId);
+    if (backoff.nextAt > Date.now()) return;
+
     if (summarizingSet.has(characterId)) return;
     summarizingSet.add(characterId);
     try {
-        await runSummarizationPipeline(characterId, characterName);
+        const result = await runSummarizationPipeline(characterId, characterName);
+        if (result.success) {
+            clearBackoff(characterId);
+            return;
+        }
+        const failures = backoff.failures + 1;
+        // 未配置 API 属于配置问题，长退避；空结果/截断/网络异常按指数退避，避免每轮重跑。
+        const baseDelay = result.error?.includes("未配置") ? 30 * 60_000 : Math.min(30 * 60_000, 60_000 * 2 ** Math.min(failures, 5));
+        writeBackoff(characterId, { failures, nextAt: Date.now() + baseDelay });
+        if (result.error?.includes("未配置")) resetEventCounter(characterId);
+    } catch (err) {
+        const failures = backoff.failures + 1;
+        writeBackoff(characterId, {
+            failures,
+            nextAt: Date.now() + Math.min(30 * 60_000, 60_000 * 2 ** Math.min(failures, 5)),
+        });
+        console.warn("[MemorySummarizer] summarization failed:", err);
     } finally {
         summarizingSet.delete(characterId);
     }
@@ -201,6 +246,7 @@ export async function runSummarizationPipeline(
         // 标签行从正文里剥出来单独存，#标签 不参与注入，只用于档案页筛选
         const { content: sectionContent, tags } = extractMemoryTags(section.content);
         if (!sectionContent) continue;
+        const canonicalTags = resolveMemoryTags(characterId, tags);
         const sectionEmbedding = usable.length === 1
             ? embedding
             : await buildSectionEmbedding(sectionContent, config);
@@ -215,7 +261,7 @@ export async function runSummarizationPipeline(
             createdAt: now,
             updatedAt: now,
             ...(section.room ? { room: section.room } : {}),
-            ...(tags.length > 0 ? { tags } : {}),
+            ...(canonicalTags.length > 0 ? { tags: canonicalTags } : {}),
             metadata: { ...sharedMetadata },
         };
         await saveMemoryEntry(entry);

@@ -184,10 +184,11 @@ const PRIMARY_DATA_MODULES: DataModuleDefinition[] = [
       {
         type: "kv",
         label: "记忆配置与计数",
-        keys: ["ai_phone_memory_config_v1"],
+        keys: ["ai_phone_memory_config_v1", "ai_phone_memory_tag_registry_v1"],
         prefixes: [
           "ai_phone_mem_evt_count_",
           "ai_phone_mem_last_sum_",
+          "ai_phone_mem_summary_backoff_",
           "ai_phone_mem_core_count_",
           "ai_phone_mem_last_core_sum_",
           "note_wall_events_",

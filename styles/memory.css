@@ -412,3 +412,181 @@
 .mem-edit-tags-input::placeholder {
     opacity: 0.45;
 }
+
+/* 记忆标签管理 */
+.mem-tag-manager-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: grid;
+  place-items: end center;
+  padding: 16px;
+  background: rgba(24, 22, 18, 0.34);
+  backdrop-filter: blur(8px);
+}
+
+.mem-tag-manager {
+  width: min(100%, 520px);
+  max-height: min(78dvh, 680px);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  border: 1px solid var(--c-hair, rgba(90, 80, 60, 0.16));
+  border-radius: 20px;
+  background: var(--c-panel, #fffdf8);
+  color: var(--c-text, #2f2b25);
+  box-shadow: 0 20px 60px rgba(30, 25, 18, 0.22);
+}
+
+.mem-tag-manager > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.mem-tag-manager > header span {
+  font-size: 8px;
+  letter-spacing: 0.16em;
+  font-weight: 700;
+  color: var(--c-text-muted, rgba(90, 80, 60, 0.5));
+}
+
+.mem-tag-manager > header h2 {
+  margin: 3px 0 0;
+  font-family: "Songti SC", "Noto Serif SC", serif;
+  font-size: 20px;
+}
+
+.mem-tag-manager > header > button {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  padding: 4px;
+  cursor: pointer;
+}
+
+.mem-tag-manager-note {
+  margin: 0;
+  font-size: 10px;
+  line-height: 1.55;
+  color: var(--c-text-muted, rgba(90, 80, 60, 0.62));
+}
+
+.mem-tag-manager-error {
+  margin: 0;
+  padding: 7px 9px;
+  border-radius: 8px;
+  background: rgba(182, 61, 53, 0.1);
+  color: #b63d35;
+  font-size: 10px;
+}
+
+.mem-tag-manager-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.mem-tag-manager-list article {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 9px;
+  border: 1px solid rgba(90, 80, 60, 0.1);
+  border-radius: 11px;
+}
+
+.mem-tag-manager-list article[data-hidden="true"] {
+  opacity: 0.55;
+}
+
+.mem-tag-manager-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.mem-tag-manager-main b {
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mem-tag-manager-main span {
+  font-size: 8.5px;
+  color: var(--c-text-muted, rgba(90, 80, 60, 0.56));
+}
+
+.mem-tag-manager-actions {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  flex: none;
+}
+
+.mem-tag-manager-actions button {
+  border: 1px solid rgba(90, 80, 60, 0.14);
+  border-radius: 7px;
+  background: transparent;
+  color: inherit;
+  min-width: 25px;
+  height: 25px;
+  font-size: 9px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.mem-tag-manager-actions button:disabled {
+  opacity: 0.45;
+}
+
+.mem-tag-manager-merge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  border: 1px solid rgba(90, 80, 60, 0.14);
+  border-radius: 7px;
+  height: 25px;
+  padding: 0 4px;
+  color: var(--c-text-muted, rgba(90, 80, 60, 0.62));
+}
+
+.mem-tag-manager-merge select {
+  max-width: 82px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 9px;
+  outline: none;
+}
+
+.mem-tag-manager-empty {
+  margin: 8px 0;
+  font-size: 11px;
+  color: var(--c-text-muted, rgba(90, 80, 60, 0.6));
+}
+
+.mem-archive-tag-tools {
+  display: flex;
+  justify-content: flex-end;
+  margin: 7px 0 5px;
+}
+
+.mem-archive-tag-tools button {
+  border: 0;
+  background: transparent;
+  color: var(--c-text-muted, rgba(90, 80, 60, 0.58));
+  font-size: 9px;
+  letter-spacing: 0.04em;
+  padding: 2px 0;
+  cursor: pointer;
+}

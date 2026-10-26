@@ -41,6 +41,8 @@ import {
     normalizeMemoryTags,
 } from "@/lib/memory-room";
 import { reclassifyMemoryRooms } from "@/lib/memory-room-reclassify";
+import { resolveMemoryTags } from "@/lib/memory-tag-registry";
+import { MemoryTagManager } from "./memory-tag-manager";
 import { estimateTokens } from "@/lib/token-counter";
 import { hydrateChatStorage } from "@/lib/chat-storage";
 import { loadNativeTimeline, type NativeTimelineEntry } from "@/lib/short-term-assembler";
@@ -252,6 +254,7 @@ export function MemoryBankPage({
     const [reclassifyProgress, setReclassifyProgress] = useState<string | null>(null);
     const [roomPromptEditing, setRoomPromptEditing] = useState<Partial<Record<MemoryRoom, string>>>({});
     const [tagFilter, setTagFilter] = useState<string | null>(null);
+    const [tagManagerOpen, setTagManagerOpen] = useState(false);
     const [reclassifyScopeOpen, setReclassifyScopeOpen] = useState(false);
     const [roomPromptPickerOpen, setRoomPromptPickerOpen] = useState(false);
     const [activeRoomPrompt, setActiveRoomPrompt] = useState<MemoryRoom>("living");
@@ -742,7 +745,7 @@ export function MemoryBankPage({
             if (editorRoom) entry.room = editorRoom;
             else delete entry.room;
             // #标签：只作用于长期记忆，同样显式写入/清除
-            const editorTags = type === "long_term" ? normalizeMemoryTags(memoryEditor.tags ?? []) : [];
+            const editorTags = type === "long_term" ? resolveMemoryTags(selectedCharId, memoryEditor.tags ?? []) : [];
             if (editorTags.length > 0) entry.tags = editorTags;
             else delete entry.tags;
 
@@ -957,6 +960,9 @@ export function MemoryBankPage({
                     <p className="mem-room-group-warn">已超出该房间预算，注入时会被截断。</p>
                 ) : null}
 
+                <div className="mem-archive-tag-tools">
+                    <button type="button" onClick={() => setTagManagerOpen(true)}>管理标签</button>
+                </div>
                 {tags.length > 0 ? (
                     <div className="mem-archive-tags">
                         {tags.map(([tag, count]) => (
@@ -1226,6 +1232,14 @@ export function MemoryBankPage({
                 ) : null}
 
                 {/* Manual memory editor */}
+                {tagManagerOpen && selectedCharId ? (
+                    <MemoryTagManager
+                        characterId={selectedCharId}
+                        entries={longTermEntries}
+                        onClose={() => setTagManagerOpen(false)}
+                        onChanged={() => { if (selectedCharId) void loadDetailData(selectedCharId); }}
+                    />
+                ) : null}
                 {memoryEditor && (() => {
                     const isCore = memoryEditor.type === "core";
                     const isEdit = Boolean(memoryEditor.entry);

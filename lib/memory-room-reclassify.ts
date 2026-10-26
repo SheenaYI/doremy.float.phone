@@ -9,6 +9,7 @@ import { loadMemoryEntriesByType, patchMemoryEntries } from "./memory-storage";
 import { resolveAuxiliaryApiConfig } from "./settings-storage";
 import { simpleLLMCall } from "./api-helpers";
 import { MEMORY_ROOMS, MEMORY_ROOM_META, normalizeMemoryRoom, normalizeMemoryTags } from "./memory-room";
+import { resolveMemoryTags } from "./memory-tag-registry";
 
 /** 每批处理的条数（上限，避免单次请求过大） */
 export const RECLASSIFY_BATCH_SIZE = 20;
@@ -223,7 +224,8 @@ export async function reclassifyMemoryRooms(
                 continue;
             }
             const nextRoom = assignment.room && assignment.room !== entry.room ? assignment.room : undefined;
-            const nextTags = assignment.tags && !sameTags(assignment.tags, entry.tags) ? assignment.tags : undefined;
+            const normalizedTags = assignment.tags ? resolveMemoryTags(characterId, assignment.tags) : undefined;
+            const nextTags = normalizedTags && !sameTags(normalizedTags, entry.tags) ? normalizedTags : undefined;
             if (!nextRoom && !nextTags) {
                 skipped += 1;
                 continue;
