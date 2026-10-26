@@ -154,9 +154,10 @@ async function buildVnPromptMessages(
   const vnSession = createOrGetVnSession(characterId);
   const activeChapterIndex = typeof chapterIndex === "number" ? chapterIndex : vnSession.activeChapterIndex;
   // 只把当前章节的最近窗口送进 prompt；更早内容由章节摘要/每轮 summary 承担。
-  const currentHistory = history
-    .filter((message) => message.chapterIndex === activeChapterIndex)
-    .slice(-VN_RAW_HISTORY_LIMIT);
+  const chapterHistory = history.filter((message) => message.chapterIndex === activeChapterIndex);
+  const currentHistory = chapterHistory.slice(-VN_RAW_HISTORY_LIMIT);
+  // 只给被原文窗口挤出去的旧轮次做摘要；窗口内的内容已经在原文里，重复注入没有意义。
+  const olderHistory = chapterHistory.slice(0, -VN_RAW_HISTORY_LIMIT);
   const historyMessages = currentHistory.map(toHistoryMessage);
   const memConfig = loadMemoryConfig();
   const { recentBlocks, truncatedHistory, wbActivationContext, unifiedRecentItems } = prepareShortTermContext(
@@ -190,7 +191,7 @@ async function buildVnPromptMessages(
       })
       .filter(Boolean),
   ];
-  const roundRecaps = currentHistory
+  const roundRecaps = olderHistory
     .filter((message) => message.role === "assistant" && message.roundSummary?.trim())
     .slice(-VN_RECAP_ROUND_LIMIT)
     .map((message) => `- ${compact(message.roundSummary!.trim(), 220)}`);
