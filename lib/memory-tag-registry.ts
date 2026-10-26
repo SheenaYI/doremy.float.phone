@@ -250,3 +250,60 @@ export async function seedMemoryTagRegistryFromEntries(characterId: string): Pro
     if (added > 0) saveMemoryTagRegistry(characterId, tags);
     return added;
 }
+
+/**
+ * 批量应用标签归并映射（from -> to），只改 registry 与 tags 字段。
+ * 多个房间的 AI 归并结果一次写回，避免逐条加载 IndexedDB。
+ */
+export async function applyMemoryTagMappings(
+    characterId: string,
+    mappings: Array<{ from: string; to: string }>,
+): Promise<number> {
+    if (!characterId || mappings.length === 0) return 0;
+    const tags = loadStore()[characterId] ?? [];
+    const pairs = mappings
+        .map(item => ({ from: cleanLabel(item.from), to: cleanLabel(item.to) }))
+        .filter(item => item.from && item.to && normalizeKey(item.from) !== normalizeKey(item.to));
+    if (pairs.length === 0) return 0;
+
+    const map = new Map<string, string>();
+    for (const pair of pairs) {
+        const source = findCanonical(tags, pair.from);
+        let target = findCanonical(tags, pair.to);
+        if (!source) continue;
+        if (!target) {
+            target = {
+                id: makeTagId(pair.to),
+                label: pair.to,
+                aliases: [],
+                kind: "auto",
+                usage: 0,
+                createdAt: new Date().toISOString(),
+                lastUsedAt: new Date().toISOString(),
+            };
+            tags.push(target);
+        }
+        target.aliases = Array.from(new Set([
+            ...target.aliases,
+            source.label,
+            ...source.aliases,
+        ].filter(alias => normalizeKey(alias) !== normalizeKey(target.label))));
+        target.usage += source.usage;
+        target.lastUsedAt = new Date().toISOString();
+        map.set(normalizeKey(source.label), target.label);
+        const index = tags.findIndex(tag => tag.id === source.id);
+        if (index >= 0) tags.splice(index, 1);
+    }
+    if (map.size === 0) return 0;
+    saveMemoryTagRegistry(characterId, tags);
+
+    const entries = await loadMemoryEntries(characterId);
+    const patches = entries.map(entry => {
+        const current = entry.tags ?? [];
+        if (current.length === 0) return null;
+        const mapped = Array.from(new Set(current.map(tag => map.get(normalizeKey(tag)) ?? tag)));
+        if (mapped.length === current.length && mapped.every((tag, index) => tag === current[index])) return null;
+        return { id: entry.id, tags: mapped };
+    }).filter((patch): patch is { id: string; tags: string[] } => Boolean(patch));
+    return patchMemoryEntries(patches);
+}

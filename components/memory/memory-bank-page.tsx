@@ -41,8 +41,9 @@ import {
     normalizeMemoryTags,
 } from "@/lib/memory-room";
 import { reclassifyMemoryRooms } from "@/lib/memory-room-reclassify";
-import { resolveMemoryTags } from "@/lib/memory-tag-registry";
+import { loadMemoryTagRegistry, resolveMemoryTags } from "@/lib/memory-tag-registry";
 import { MemoryTagManager } from "./memory-tag-manager";
+import { MemoryTagDrawer } from "./memory-tag-drawer";
 import { estimateTokens } from "@/lib/token-counter";
 import { hydrateChatStorage } from "@/lib/chat-storage";
 import { loadNativeTimeline, type NativeTimelineEntry } from "@/lib/short-term-assembler";
@@ -255,6 +256,7 @@ export function MemoryBankPage({
     const [roomPromptEditing, setRoomPromptEditing] = useState<Partial<Record<MemoryRoom, string>>>({});
     const [tagFilter, setTagFilter] = useState<string | null>(null);
     const [tagManagerOpen, setTagManagerOpen] = useState(false);
+    const [tagDrawerOpen, setTagDrawerOpen] = useState(false);
     const [reclassifyScopeOpen, setReclassifyScopeOpen] = useState(false);
     const [roomPromptPickerOpen, setRoomPromptPickerOpen] = useState(false);
     const [activeRoomPrompt, setActiveRoomPrompt] = useState<MemoryRoom>("living");
@@ -286,8 +288,9 @@ export function MemoryBankPage({
 
     useEffect(() => {
         setActiveTimelineTags(new Set());
+        setTagDrawerOpen(false);
         onFilterOpenChange?.(false);
-    }, [activeTab, onFilterOpenChange, selectedCharId]);
+    }, [activeTab, onFilterOpenChange, selectedCharId, roomFilter]);
 
     const loadCharacterList = useCallback(async (isCancelled?: () => boolean) => {
         const allChars = loadCharacters();
@@ -914,9 +917,15 @@ export function MemoryBankPage({
         const used = items.reduce((sum, entry) => sum + estimateTokens(entry.content) + 4, 0);
         const budget = room ? (config.roomBudgets?.[room] ?? 0) : 0;
 
+        const hiddenTags = new Set(
+            (selectedCharId ? loadMemoryTagRegistry(selectedCharId) : [])
+                .filter(tag => tag.hidden)
+                .map(tag => tag.label),
+        );
         const tagCounts = new Map<string, number>();
         for (const entry of items) {
             for (const tag of entry.tags ?? []) {
+                if (hiddenTags.has(tag)) continue;
                 tagCounts.set(tag, (tagCounts.get(tag) ?? 0) + 1);
             }
         }
@@ -965,7 +974,7 @@ export function MemoryBankPage({
                 </div>
                 {tags.length > 0 ? (
                     <div className="mem-archive-tags">
-                        {tags.map(([tag, count]) => (
+                        {tags.slice(0, 8).map(([tag, count]) => (
                             <button
                                 key={tag}
                                 type="button"
@@ -976,6 +985,15 @@ export function MemoryBankPage({
                                 <span className="mem-tag-chip-count">{count}</span>
                             </button>
                         ))}
+                        {tags.length > 8 ? (
+                            <button
+                                type="button"
+                                className="mem-tag-more"
+                                onClick={() => setTagDrawerOpen(true)}
+                            >
+                                更多 +{tags.length - 8}
+                            </button>
+                        ) : null}
                     </div>
                 ) : null}
 
@@ -1013,6 +1031,14 @@ export function MemoryBankPage({
                         ))}
                     </div>
                 )}
+                {tagDrawerOpen ? (
+                    <MemoryTagDrawer
+                        tags={tags}
+                        activeTag={tagFilter}
+                        onPick={(tag) => { setTagFilter(tag); setTagDrawerOpen(false); }}
+                        onClose={() => setTagDrawerOpen(false)}
+                    />
+                ) : null}
             </div>
         );
     };

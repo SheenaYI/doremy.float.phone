@@ -2,7 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Eye, EyeOff, Merge, Pencil, X } from "lucide-react";
-import type { MemoryEntry } from "@/lib/memory-types";
+import type { MemoryEntry, MemoryRoom } from "@/lib/memory-types";
+import { MEMORY_ROOMS, MEMORY_ROOM_META } from "@/lib/memory-room";
+import { compactMemoryTags } from "@/lib/memory-tag-compactor";
 import {
   loadMemoryTagRegistry,
   mergeMemoryTags,
@@ -27,6 +29,9 @@ export function MemoryTagManager({
   const [tags, setTags] = useState<MemoryTagRecord[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [compactRooms, setCompactRooms] = useState<MemoryRoom[]>([...MEMORY_ROOMS]);
+  const [compacting, setCompacting] = useState(false);
+  const [compactMessage, setCompactMessage] = useState("");
 
   const refresh = useCallback(() => {
     setTags(loadMemoryTagRegistry(characterId));
@@ -102,6 +107,63 @@ export function MemoryTagManager({
           只改标签，不改记忆正文。合并会把旧标签写入新标签的别名，并同步改写已有档案；隐藏只影响展示。
         </p>
         {error ? <p className="mem-tag-manager-error">{error}</p> : null}
+
+        <div className="mem-tag-ai">
+          <div className="mem-tag-ai-head">
+            <b>AI 归纳标签</b>
+            <em>只合并同义标签，不改记忆正文</em>
+          </div>
+          <div className="mem-tag-ai-rooms">
+            <button
+              type="button"
+              data-active={compactRooms.length === MEMORY_ROOMS.length ? "true" : undefined}
+              onClick={() => setCompactRooms(compactRooms.length === MEMORY_ROOMS.length ? [] : [...MEMORY_ROOMS])}
+            >
+              全部房间
+            </button>
+            {MEMORY_ROOMS.map(room => (
+              <button
+                key={room}
+                type="button"
+                data-active={compactRooms.includes(room) ? "true" : undefined}
+                onClick={() => setCompactRooms(current => current.includes(room) ? current.filter(item => item !== room) : [...current, room])}
+              >
+                {MEMORY_ROOM_META[room].label}
+              </button>
+            ))}
+          </div>
+          <div className="mem-tag-ai-foot">
+            <span>{compactMessage || "选择房间后，AI 会按房间分别归并"}</span>
+            <button
+              type="button"
+              disabled={compacting || busy || compactRooms.length === 0}
+              onClick={() => {
+                if (compacting || busy || compactRooms.length === 0) return;
+                const scopeLabel = compactRooms.length === MEMORY_ROOMS.length ? "全部房间" : compactRooms.map(room => MEMORY_ROOM_META[room].label).join("、");
+                setCompacting(true);
+                setCompactMessage(`正在调用记忆总结 API 归纳「${scopeLabel}」…`);
+                setError("");
+                void compactMemoryTags(
+                  characterId,
+                  compactRooms.length === MEMORY_ROOMS.length ? "all" : compactRooms,
+                ).then(result => {
+                  if (!result.success) {
+                    setCompactMessage(result.error || "标签归纳失败");
+                    return;
+                  }
+                  setCompactMessage(result.mappings > 0 ? `已归并 ${result.mappings} 个标签 · ${result.rooms} 个房间` : "没有需要合并的标签");
+                  refresh();
+                  onChanged();
+                }).catch(err => {
+                  setCompactMessage(err instanceof Error ? err.message : "标签归纳失败");
+                }).finally(() => setCompacting(false));
+              }}
+            >
+              {compacting ? "归纳中…" : "归纳选中房间"}
+            </button>
+          </div>
+        </div>
+
         <div className="mem-tag-manager-list">
           {ordered.length === 0 ? (
             <p className="mem-tag-manager-empty">还没有标签。生成记忆或手动编辑标签后会出现在这里。</p>
@@ -133,7 +195,7 @@ export function MemoryTagManager({
                     </label>
                   ) : null}
                   <button type="button" title="重命名" disabled={busy} onClick={() => handleRename(tag.label)}>
-                    <Pencil size={12} />
+                    <Pencil size={12} /> <span>改名</span>
                   </button>
                   <button
                     type="button"
@@ -142,6 +204,7 @@ export function MemoryTagManager({
                     onClick={() => run(() => { setMemoryTagHidden(characterId, tag.label, !tag.hidden); })}
                   >
                     {tag.hidden ? <Eye size={12} /> : <EyeOff size={12} />}
+                    <span>{tag.hidden ? "显示" : "隐藏"}</span>
                   </button>
                   <button
                     type="button"
@@ -149,7 +212,7 @@ export function MemoryTagManager({
                     disabled={busy}
                     onClick={() => run(() => { setMemoryTagCore(characterId, tag.label, tag.kind !== "core"); })}
                   >
-                    {tag.kind === "core" ? "C" : "设"}
+                    <span>{tag.kind === "core" ? "普通" : "核心"}</span>
                   </button>
                 </div>
               </article>
