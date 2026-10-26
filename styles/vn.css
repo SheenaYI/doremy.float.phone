@@ -1668,3 +1668,47 @@
 @media (prefers-reduced-motion: reduce) {
   .vnc-ripple-ring { animation: none; }
 }
+
+/* 最新章节的卫星环，平衡合册涟漪的视觉重心 */
+.vnc-node[data-latest="true"] .vnc-star-core {
+  width: 7px;
+  height: 7px;
+  box-shadow: 0 0 5px #fff, 0 0 12px rgba(216,179,106,.9), 0 0 26px rgba(216,179,106,.45);
+}
+.vnc-satellite {
+  position: absolute;
+  inset: -27px;
+  border-radius: 50%;
+  border: 1px solid rgba(232,201,138,.3);
+  transform: rotate(-24deg);
+  animation: vnc-satellite-spin 9s linear infinite;
+  pointer-events: none;
+}
+.vnc-satellite::after {
+  content: "";
+  position: absolute;
+  top: -2.5px;
+  left: 50%;
+  width: 5px;
+  height: 5px;
+  margin-left: -2.5px;
+  border-radius: 50%;
+  background: #f4d79e;
+  box-shadow: 0 0 7px rgba(244,215,158,.95), 0 0 16px rgba(244,215,158,.45);
+}
+.vnc-satellite i {
+  position: absolute;
+  right: -1px;
+  bottom: 20%;
+  width: 2.5px;
+  height: 2.5px;
+  border-radius: 50%;
+  background: rgba(255,246,228,.55);
+}
+@keyframes vnc-satellite-spin {
+  from { transform: rotate(-24deg); }
+  to { transform: rotate(336deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .vnc-satellite { animation: none; }
+}

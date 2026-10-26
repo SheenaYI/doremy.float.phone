@@ -188,6 +188,11 @@ export function VnChapters({ characterId, onClose, onSelect, vnTheme }: VnChapte
     return items;
   }, [chapters, volumeById]);
 
+  const latestChapterIndex = Math.max(
+    -1,
+    ...chapters.filter(chapter => !chapter.volumeId).map(chapter => chapter.index),
+  );
+
   const VISIBLE_ITEMS = 12;
   const firstVisibleIndex = Math.min(
     visibleStart ?? Math.max(0, starItems.length - VISIBLE_ITEMS),
@@ -749,6 +754,7 @@ export function VnChapters({ characterId, onClose, onSelect, vnTheme }: VnChapte
                 data-archived={ch.archived ? "true" : undefined}
                 data-selectable={selectable ? "true" : undefined}
                 data-selected={selected ? "true" : undefined}
+                data-latest={item.index === latestChapterIndex ? "true" : undefined}
                 style={{ left: `${x}%`, top: y, opacity: mounted ? 1 : 0, transition: `all 0.5s ease ${Math.min(i * 0.03, 0.45)}s` }}
                 onClick={() => {
                   if (selectMode) {
@@ -759,6 +765,9 @@ export function VnChapters({ characterId, onClose, onSelect, vnTheme }: VnChapte
                 }}
               >
                 <div className="vnc-star">
+                  {item.index === latestChapterIndex ? (
+                    <span className="vnc-satellite" aria-hidden="true"><i /></span>
+                  ) : null}
                   <div className="vnc-star-flare" />
                   <div className="vnc-star-ring" />
                   <div className="vnc-star-ray vnc-star-ray-h" />
