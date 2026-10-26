@@ -30,6 +30,16 @@ import { maybeRunSummarization } from "@/lib/memory-summarizer";
 import type { VnFrame, VnOptions, VnBeat } from "@/lib/vn-types";
 import { splitBilingualText } from "@/lib/bilingual-text";
 import { playAudioBlobViaMediaElement, resolveVoiceConfig, synthesizeSpeech, unlockAudioPlayback } from "@/lib/tts-service";
+import {
+  getVnStatusConfig,
+  isVnStatusActive,
+  mergeVnStatusRaw,
+  saveVnStatusConfig,
+  VN_STATUS_UPDATED_EVENT,
+  type VnStatusConfig,
+} from "@/lib/vn-status-region";
+import { VnStatusFloat } from "./vn-status-float";
+import { VnStatusSettings } from "./vn-status-settings";
 
 interface VnPlayerProps {
   characterId: string;
@@ -41,13 +51,14 @@ interface VnPlayerProps {
 
 type AssetLoadStatus = "ready" | "failed";
 
-function tagFramesWithMessage(frames: VnFrame[], message: VnMessage): VnFrame[] {
+function tagFramesWithMessage(frames: VnFrame[], message: VnMessage, statusText?: string): VnFrame[] {
   return frames.map((frame, index) => ({
     ...frame,
     sourceMessageId: message.id,
     sourceFrameIndex: index,
     sourceRole: message.role,
     sourceCreatedAt: message.createdAt,
+    statusText: statusText ?? message.statusRaw,
     voiceAudio: message.frameAudio?.[index],
   }));
 }
@@ -57,7 +68,7 @@ function buildFramesFromMessages(messages: VnMessage[]): { frames: VnFrame[]; la
   let lastOptions: VnOptions | null = null;
   for (const message of messages) {
     const parsed = parseVnResponse(message.rawContent);
-    frames.push(...tagFramesWithMessage(parsed.frames, message));
+    frames.push(...tagFramesWithMessage(parsed.frames, message, parsed.statusText));
     if (message.role === "assistant") lastOptions = parsed.options;
   }
   return { frames, lastOptions };
@@ -101,6 +112,9 @@ export function VnPlayer({ characterId, chapterIndex, onClose, onChapterEnd, vnT
   const [showArchiveConfirm, setShowArchiveConfirm] = useState(false);
   const [isArchiving, setIsArchiving] = useState(false);
   const [writeChapterSummaryToMemory, setWriteChapterSummaryToMemory] = useState(true);
+  const [statusConfig, setStatusConfig] = useState<VnStatusConfig>(() => getVnStatusConfig(characterId));
+  const [statusSettingsOpen, setStatusSettingsOpen] = useState(false);
+  const [statusVisible, setStatusVisible] = useState(true);
   const [showScenePicker, setShowScenePicker] = useState(false);
   const [showReplayConfirm, setShowReplayConfirm] = useState(false);
   const [isReplaying, setIsReplaying] = useState(false);
@@ -126,6 +140,13 @@ export function VnPlayer({ characterId, chapterIndex, onClose, onChapterEnd, vnT
   const [voicePlayingKey, setVoicePlayingKey] = useState<string | null>(null);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const longPressTriggeredRef = useRef(false);
+
+  useEffect(() => {
+    setStatusConfig(getVnStatusConfig(characterId));
+    const sync = () => setStatusConfig(getVnStatusConfig(characterId));
+    window.addEventListener(VN_STATUS_UPDATED_EVENT, sync);
+    return () => window.removeEventListener(VN_STATUS_UPDATED_EVENT, sync);
+  }, [characterId]);
 
   const typingRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autoRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -609,13 +630,14 @@ export function VnPlayer({ characterId, chapterIndex, onClose, onChapterEnd, vnT
         rawContent: result.rawText,
         chapterIndex,
         roundSummary: result.summaryText,
+        statusRaw: result.statusText,
       });
 
       // Update start message ID if needed
       updateChapterStartMessageId(session.id, chapterIndex, aiMsg.id);
 
       // Add AI frames
-      const aiFrames = tagFramesWithMessage(result.frames, aiMsg);
+      const aiFrames = tagFramesWithMessage(result.frames, aiMsg, result.statusText);
       const updatedFrames = [...newFrames, ...aiFrames];
       setAllFrames(updatedFrames);
       setCurrentOptions(result.options);
@@ -732,10 +754,10 @@ export function VnPlayer({ characterId, chapterIndex, onClose, onChapterEnd, vnT
     try {
       const allMessages = loadVnMessagesForChapter(session.id, chapterIndex);
       const result = await generateVnCompletion(characterId, allMessages, { chapterIndex });
-      const aiMsg = pushVnMessage({ sessionId: session.id, role: "assistant", rawContent: result.rawText, chapterIndex, roundSummary: result.summaryText });
+      const aiMsg = pushVnMessage({ sessionId: session.id, role: "assistant", rawContent: result.rawText, chapterIndex, roundSummary: result.summaryText, statusRaw: result.statusText });
       updateChapterStartMessageId(session.id, chapterIndex, userMsg.id);
 
-      const aiFrames = tagFramesWithMessage(result.frames, aiMsg);
+      const aiFrames = tagFramesWithMessage(result.frames, aiMsg, result.statusText);
       const updatedFrames = [...newFrames, ...aiFrames];
       setAllFrames(updatedFrames);
       setCurrentOptions(result.options);
@@ -838,14 +860,14 @@ export function VnPlayer({ characterId, chapterIndex, onClose, onChapterEnd, vnT
     try {
       const allMessages = loadVnMessagesForChapter(session.id, chapterIndex);
       const result = await generateVnCompletion(characterId, allMessages, { chapterIndex });
-      const aiMsg = pushVnMessage({ sessionId: session.id, role: "assistant", rawContent: result.rawText, chapterIndex, roundSummary: result.summaryText });
+      const aiMsg = pushVnMessage({ sessionId: session.id, role: "assistant", rawContent: result.rawText, chapterIndex, roundSummary: result.summaryText, statusRaw: result.statusText });
       rebuildFrames();
       // Play new AI frames
       const newMsgs = loadVnMessagesForChapter(session.id, chapterIndex);
       const { frames } = buildFramesFromMessages(newMsgs);
       setAllFrames(frames);
       setCurrentOptions(result.options);
-      const aiFrames = tagFramesWithMessage(result.frames, aiMsg);
+      const aiFrames = tagFramesWithMessage(result.frames, aiMsg, result.statusText);
       if (aiFrames.length > 0) {
         const startIdx = frames.length - aiFrames.length;
         setFrameIdx(startIdx);
@@ -880,14 +902,14 @@ export function VnPlayer({ characterId, chapterIndex, onClose, onChapterEnd, vnT
     try {
       const allMessages = loadVnMessagesForChapter(session.id, chapterIndex);
       const result = await generateVnCompletion(characterId, allMessages, { chapterIndex });
-      const aiMsg = pushVnMessage({ sessionId: session.id, role: "assistant", rawContent: result.rawText, chapterIndex, roundSummary: result.summaryText });
+      const aiMsg = pushVnMessage({ sessionId: session.id, role: "assistant", rawContent: result.rawText, chapterIndex, roundSummary: result.summaryText, statusRaw: result.statusText });
       rebuildFrames();
       // Play new AI frames
       const newMsgs = loadVnMessagesForChapter(session.id, chapterIndex);
       const { frames } = buildFramesFromMessages(newMsgs);
       setAllFrames(frames);
       setCurrentOptions(result.options);
-      const aiFrames = tagFramesWithMessage(result.frames, aiMsg);
+      const aiFrames = tagFramesWithMessage(result.frames, aiMsg, result.statusText);
       if (aiFrames.length > 0) {
         const startIdx = frames.length - aiFrames.length;
         setFrameIdx(startIdx);
@@ -1036,6 +1058,23 @@ export function VnPlayer({ characterId, chapterIndex, onClose, onChapterEnd, vnT
     );
   };
 
+  const currentStatusRaw = useMemo(() => {
+    let merged = "";
+    const last = Math.min(frameIdx, allFrames.length - 1);
+    for (let i = 0; i <= last; i += 1) {
+      const text = allFrames[i]?.statusText?.trim();
+      if (text) merged = mergeVnStatusRaw(merged, text);
+    }
+    return merged;
+  }, [allFrames, frameIdx]);
+
+  const handleSaveStatusConfig = (next: VnStatusConfig) => {
+    setStatusConfig(next);
+    saveVnStatusConfig(characterId, next);
+    setStatusSettingsOpen(false);
+    setStatusVisible(isVnStatusActive(next));
+  };
+
   return (
     <div className="vn-shell" ref={vnShellRef} data-vn-theme={vnTheme || "default"} onClick={() => {
       if (historyOpen || showArchiveConfirm || showReplayConfirm || showScenePicker || showBeatsPanel) return;
@@ -1106,6 +1145,9 @@ export function VnPlayer({ characterId, chapterIndex, onClose, onChapterEnd, vnT
               <MapPin size={18} />
             </button>
           )}
+          <button className="vn-topbar-btn" onClick={() => setStatusSettingsOpen(true)} title="状态浮窗">
+            <Eye size={18} />
+          </button>
           <button className="vn-topbar-btn" onClick={() => setHistoryOpen(true)} title="回顾">
             <Clock size={18} />
           </button>
@@ -1117,6 +1159,25 @@ export function VnPlayer({ characterId, chapterIndex, onClose, onChapterEnd, vnT
         </div>
         </div>
       </div>
+
+      {isVnStatusActive(statusConfig) && statusVisible ? (
+        <VnStatusFloat
+          characterId={characterId}
+          config={statusConfig}
+          raw={currentStatusRaw}
+          containerRef={vnShellRef}
+          onSettings={() => setStatusSettingsOpen(true)}
+          onHide={() => setStatusVisible(false)}
+        />
+      ) : null}
+
+      {statusSettingsOpen ? (
+        <VnStatusSettings
+          initial={statusConfig}
+          onClose={() => setStatusSettingsOpen(false)}
+          onSave={handleSaveStatusConfig}
+        />
+      ) : null}
 
       {/* ── Dialogue Box: replay / playing / input ── */}
       {!showArchiveConfirm && !showReplayConfirm && assetsReady && sceneVisualReady && (isReplaying ? replayFrame : (frame || waitingForInput)) && (

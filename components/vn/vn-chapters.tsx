@@ -38,6 +38,9 @@ export function VnChapters({ characterId, onClose, onSelect, vnTheme }: VnChapte
   const [orphanGroups, setOrphanGroups] = useState<VnOrphanMessageGroup[]>([]);
   const [restoringSessionId, setRestoringSessionId] = useState<string | null>(null);
   const [restoreError, setRestoreError] = useState<string | null>(null);
+  const [summarizeTarget, setSummarizeTarget] = useState<number | null>(null);
+  const [summarizeInMemory, setSummarizeInMemory] = useState(true);
+  const [summarizeError, setSummarizeError] = useState("");
 
   const character = useMemo(() => {
     return loadCharacters().find((c) => c.id === characterId);
@@ -77,22 +80,23 @@ export function VnChapters({ characterId, onClose, onSelect, vnTheme }: VnChapte
     onSelect(index);
   }, [canCreateNewChapter, chapters.length, session.id, onSelect]);
 
-  const handleSummarize = useCallback(async (chapterIndex: number) => {
+  const handleSummarize = useCallback(async (chapterIndex: number, inMemory: boolean) => {
     setSummarizing(chapterIndex);
+    setSummarizeError("");
     try {
       const messages = loadVnMessagesForChapter(session.id, chapterIndex);
       if (messages.length === 0) return;
       const summary = await summarizeVnChapter(characterId, messages);
-      updateChapterSummary(session.id, chapterIndex, summary, {
-        inMemory: chapters[chapterIndex]?.summaryInMemory !== false,
-      });
+      updateChapterSummary(session.id, chapterIndex, summary, { inMemory });
       forceUpdate((n) => n + 1);
+      setSummarizeTarget(null);
     } catch (err) {
       console.error("VN chapter summarization failed:", err);
+      setSummarizeError(err instanceof Error ? err.message : "章节总结失败");
     } finally {
       setSummarizing(null);
     }
-  }, [session.id, characterId, chapters]);
+  }, [session.id, characterId]);
 
   const handleClearSummary = useCallback((chapterIndex: number) => {
     clearChapterSummary(session.id, chapterIndex);
@@ -564,7 +568,11 @@ export function VnChapters({ characterId, onClose, onSelect, vnTheme }: VnChapte
                       className="vnc-action-btn"
                       title="生成全局记忆"
                       data-loading={summarizing === i ? "true" : undefined}
-                      onClick={() => handleSummarize(i)}
+                      onClick={() => {
+                        setSummarizeTarget(i);
+                        setSummarizeInMemory(chapters[i]?.summaryInMemory !== false);
+                        setSummarizeError("");
+                      }}
                     >
                       <BookOpen size={12} />
                     </button>
@@ -590,6 +598,45 @@ export function VnChapters({ characterId, onClose, onSelect, vnTheme }: VnChapte
           </button>
         </div>
       </div>
+
+      {/* 生成章节总结：先选择是否写入记忆 */}
+      {summarizeTarget !== null ? (() => {
+        const ch = chapters[summarizeTarget];
+        return (
+          <div className="vnc-confirm-overlay" onClick={() => setSummarizeTarget(null)}>
+            <div className="vnc-confirm-card" onClick={(e) => e.stopPropagation()}>
+              <div className="vnc-confirm-title">生成「{ch?.title ?? "本章"}」的章节总结？</div>
+              <label style={{ display: "flex", alignItems: "flex-start", gap: 8, margin: "10px 0", cursor: "pointer" }}>
+                <input
+                  type="checkbox"
+                  checked={summarizeInMemory}
+                  onChange={(event) => setSummarizeInMemory(event.target.checked)}
+                  style={{ marginTop: 2, width: 15, height: 15, accentColor: "var(--vn-accent, #d8b36a)" }}
+                />
+                <span style={{ fontSize: 12, lineHeight: 1.5 }}>
+                  将章节总结写入记忆
+                  <span style={{ display: "block", fontSize: 10, opacity: 0.55 }}>
+                    关闭后只用于 VN 上下文，不进入记忆时间线
+                  </span>
+                </span>
+              </label>
+              {summarizeError ? (
+                <div style={{ margin: "8px 0", color: "#e59b8a", fontSize: 11, lineHeight: 1.5 }}>{summarizeError}</div>
+              ) : null}
+              <div className="vnc-confirm-btns">
+                <button className="vnc-confirm-btn" onClick={() => setSummarizeTarget(null)}>取消</button>
+                <button
+                  className="vnc-confirm-btn"
+                  disabled={summarizing !== null}
+                  onClick={() => summarizeTarget !== null && void handleSummarize(summarizeTarget, summarizeInMemory)}
+                >
+                  {summarizing !== null ? "生成中…" : "生成"}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })() : null}
 
       {/* 清除章节记忆确认弹层 */}
       {confirmClearSummaryIndex !== null && (() => {

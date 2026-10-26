@@ -23,11 +23,12 @@ import type { VnMessage } from "./vn-storage";
 import { createOrGetVnSession, formatBeatsForPrompt, loadVnConfig } from "./vn-storage";
 import { DEFAULT_VN_BILINGUAL_PROMPT, resolveBilingualPrompt } from "./bilingual-prompt-defaults";
 
-export const DEFAULT_VN_SUMMARY_PROMPT = "以下是{{char}}与{{user}}在漫卷模式中的一段对话。请用200字以内的中文总结其中的关键剧情、关系变化和情感走向。若提供了此前的章节总结，请结合此前总结与这段最新对话，输出更新后的完整章节总结，不要遗漏此前已发生的重要事件。";
+export const DEFAULT_VN_SUMMARY_PROMPT = "以下是{{char}}与{{user}}在漫卷模式中的一段对话。请用 200 字以内的中文纯文本总结关键剧情、关系变化和情感走向。若提供了此前的章节总结，请结合此前总结与这段最新对话，输出更新后的完整章节总结，不要遗漏此前已发生的重要事件。只输出一段连续纯文本，不要 Markdown 标题、加粗、列表、分隔线，也不要写「章节归档」「一、重要情节」这类分节标题。";
 import { getVnSceneNames, getVnSpriteNames } from "./vn-asset-storage";
 import type { ChatMessage } from "./chat-storage";
 import type { VnFrame, VnOptions } from "./vn-types";
 import { simpleLLMCall } from "./api-helpers";
+import { buildVnStatusInstruction, getVnStatusConfig, isVnStatusActive } from "./vn-status-region";
 
 const VN_RAW_HISTORY_LIMIT = 40;
 const VN_RECAP_ROUND_LIMIT = 12;
@@ -40,6 +41,7 @@ export type VnGenerationResult = {
   model: string;
   presetName: string;
   summaryText: string;
+  statusText: string;
 };
 
 function buildVnBilingualInstruction(enabled: boolean, customPrompt?: string): string {
@@ -131,6 +133,7 @@ export async function generateVnCompletion(
     model: apiConfig.defaultModel,
     presetName: preset?.name || "默认预设",
     summaryText: parsed.summaryText,
+    statusText: parsed.statusText,
   };
 }
 
@@ -206,7 +209,7 @@ async function buildVnPromptMessages(
     retrieveCoreMemoriesForPrompt(characterId, memConfig).catch(() => null),
   ]);
 
-  return assemblePromptPayload({
+  const promptMessages = assemblePromptPayload({
     character,
     history: truncatedHistory,
     preset,
@@ -231,6 +234,11 @@ async function buildVnPromptMessages(
       return { vnBeats: beatsList, vnCurrentBeat: currentBeat };
     })(),
   });
+  const statusConfig = getVnStatusConfig(characterId);
+  if (isVnStatusActive(statusConfig)) {
+    promptMessages.push({ role: "system", content: buildVnStatusInstruction(statusConfig) });
+  }
+  return promptMessages;
 }
 
 export type VnPreviewResult = {
@@ -257,6 +265,18 @@ export async function previewVnPromptPayload(
     model: apiConfig.defaultModel,
     presetName: preset?.name || "默认预设",
   };
+}
+
+function normalizeVnChapterSummary(text: string): string {
+  return text
+    .replace(/```[\s\S]*?```/g, "")
+    .replace(/^#{1,6}\s*/gm, "")
+    .replace(/\*\*(.*?)\*\*/g, "$1")
+    .replace(/__([^_]+)__/g, "$1")
+    .replace(/^\s*[-*•]\s+/gm, "")
+    .replace(/^(?:漫卷|章节归档|章节总结|剧情总结)\s*[:：]?\s*/i, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }
 
 export async function summarizeVnChapter(
@@ -295,19 +315,32 @@ export async function summarizeVnChapter(
     lines.join("\n\n"),
   ].join("\n");
 
-  const result = await simpleLLMCall(apiConfig, [{ role: "user", content: prompt }], {
+  const callSummary = (maxTokens: number) => simpleLLMCall(apiConfig, [{ role: "user", content: prompt }], {
     temperature: 0.3,
-    max_tokens: 1500,
+    max_tokens: maxTokens,
+    label: `章节总结·${charName}`,
     // 关闭 reasoning 兜底：content 为空时报错重试，绝不用模型思考草稿充当章节总结
     allowReasoningFallback: false,
   });
 
+  let result = await callSummary(4096);
+  // 有些模型会把推理/长输出算进 max_tokens；第一次截断时给一次更大的输出预算。
   if (result.wasTruncated) {
-    throw new ChatEngineError("章节总结输出被截断，未保存，请重试或更换总结模型");
-  }
-  if (result.error || !result.content) {
-    throw new ChatEngineError(result.error || "章节总结生成失败");
+    const retry = await callSummary(8192);
+    if (retry.content && (!retry.wasTruncated || retry.content.length > (result.content?.length ?? 0))) {
+      result = retry;
+    }
   }
 
-  return result.content;
+  if (!result.content) {
+    throw new ChatEngineError(result.error || "章节总结生成失败");
+  }
+  // 极端情况下仍截断：如果已经拿到足够长的正文，降级保存，别让整章归档失败。
+  if (result.wasTruncated && result.content.trim().length < 80) {
+    throw new ChatEngineError("章节总结输出被截断，未保存，请重试或更换总结模型");
+  }
+
+  const normalized = normalizeVnChapterSummary(result.content);
+  if (!normalized) throw new ChatEngineError("章节总结为空，未保存");
+  return normalized;
 }

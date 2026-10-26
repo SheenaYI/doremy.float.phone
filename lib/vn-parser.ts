@@ -37,9 +37,19 @@ export function parseVnResponse(rawText: string): VnParsedResponse {
   // Remove summary block so it never leaks into scene/narration rendering
   const contentSource = trimmed.replace(/<summary>[\s\S]*?<\/summary>/gi, "").trim();
 
+  // Extract optional status block: VN uses <status>, chat uses [状态栏].
+  const statusMatch = contentSource.match(/<status\b[^>]*>([\s\S]*?)<\/status>/i);
+  const legacyStatusMatch = statusMatch ? null : contentSource.match(/\[状态栏\]([\s\S]*?)\[\/状态栏\]/i);
+  const statusText = (statusMatch?.[1] ?? legacyStatusMatch?.[1] ?? "").trim();
+  // Remove status blocks so they never leak into scene/narration rendering.
+  const withoutStatus = contentSource
+    .replace(/<status\b[^>]*>[\s\S]*?<\/status>/gi, "")
+    .replace(/\[状态栏\][\s\S]*?\[\/状态栏\]/gi, "")
+    .trim();
+
   // Extract <content>...</content> or use full text
-  const contentMatch = contentSource.match(/<content>([\s\S]*?)<\/content>/i);
-  const body = contentMatch ? contentMatch[1].trim() : contentSource;
+  const contentMatch = withoutStatus.match(/<content>([\s\S]*?)<\/content>/i);
+  const body = contentMatch ? contentMatch[1].trim() : withoutStatus;
 
 
   // Parse all <scene> tags
@@ -118,7 +128,7 @@ export function parseVnResponse(rawText: string): VnParsedResponse {
     }
   }
 
-  return { frames, options, rawText: trimmed, summaryText };
+  return { frames, options, rawText: trimmed, summaryText, statusText };
 }
 
 /**

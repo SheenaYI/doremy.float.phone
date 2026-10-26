@@ -354,6 +354,8 @@ const PRIMARY_DATA_MODULES: DataModuleDefinition[] = [
         keys: [
           "ai_phone_vn_scenes_v1",
           "ai_phone_vn_sprites_v1",
+          "ai_phone_vn_status_region_v1",
+          "ai_phone_vn_status_layout_v1",
           // 剧情公用方案仓库（文风/状态栏/小剧场/快捷输入方案），随创作模块备份
           "ai_phone_story_scheme_repo_v1",
           "map_adventure_interaction_config_v1",

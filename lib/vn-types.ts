@@ -7,6 +7,8 @@ export type VnFrame = {
   sourceFrameIndex?: number;
   sourceRole?: VnMessage["role"];
   sourceCreatedAt?: string;
+  /** 这一帧所属 AI 回复的状态浮窗原文 */
+  statusText?: string;
   voiceAudio?: VnFrameAudio;
 };
 
@@ -17,6 +19,7 @@ export type VnParsedResponse = {
   options: VnOptions | null;
   rawText: string;
   summaryText: string;
+  statusText: string;
 };
 
 export type VnBeat = {
@@ -65,6 +68,8 @@ export type VnMessage = {
   createdAt: string;
   frameAudio?: Record<number, VnFrameAudio>;
   roundSummary?: string;
+  /** 本轮 [状态浮窗] 的原始文本，便于历史回看与增量合并 */
+  statusRaw?: string;
 };
 
 export type VnFrameAudio = {

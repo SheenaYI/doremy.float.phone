@@ -17,8 +17,13 @@ function serializeForInlineScript(value: string): string {
     return JSON.stringify(value).replace(/</g, "\\u003c").replace(/>/g, "\\u003e").replace(/&/g, "\\u0026");
 }
 
-function buildSrcDoc(html: string, raw: string, frameId: string, kind: "status" | "theater" | "meeting"): string {
-    const withRaw = html.split("{{RAW}}").join(escapeHtmlText(raw));
+function buildSrcDoc(html: string, raw: string, frameId: string, kind: "status" | "theater" | "meeting", css = ""): string {
+    const withCss = css.trim()
+        ? (/<head[\s>]/i.test(html)
+            ? html.replace(/<head([^>]*)>/i, `<head$1><style>${css}</style>`)
+            : `<style>${css}</style>${html}`)
+        : html;
+    const withRaw = withCss.split("{{RAW}}").join(escapeHtmlText(raw));
     const base = /<html[\s>]/i.test(withRaw)
         ? withRaw
         : `<!doctype html><html><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/></head><body>${withRaw}</body></html>`;
@@ -29,13 +34,13 @@ function buildSrcDoc(html: string, raw: string, frameId: string, kind: "status" 
         : inject + base;
 }
 
-export function CustomStatusFrame({ html, raw, kind = "status", title = "自定义状态栏", onAction }: { html: string; raw: string; kind?: "status" | "theater" | "meeting"; title?: string; onAction?: (action: "accept" | "decline") => void }) {
+export function CustomStatusFrame({ html, raw, css = "", kind = "status", title = "自定义状态栏", onAction }: { html: string; raw: string; css?: string; kind?: "status" | "theater" | "meeting"; title?: string; onAction?: (action: "accept" | "decline") => void }) {
     const iframeRef = useRef<HTMLIFrameElement | null>(null);
     const [frameId] = useState(() => `csf_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`);
     const [height, setHeight] = useState(FRAME_MIN_HEIGHT);
 
     const srcDoc = useMemo(() => {
-        const doc = buildSrcDoc(html, raw, frameId, kind);
+        const doc = buildSrcDoc(html, raw, frameId, kind, css);
         const bridge = `<script>(function(){
   var frameId=${JSON.stringify(frameId)};
   var lastHeight=0,raf=0;
@@ -53,12 +58,12 @@ export function CustomStatusFrame({ html, raw, kind = "status", title = "自定�
   setTimeout(sched,30);setTimeout(sched,120);setTimeout(sched,500);setTimeout(sched,1500);
 })();</` + `script>`;
         return /<\/body>/i.test(doc) ? doc.replace(/<\/body>/i, `${bridge}</body>`) : doc + bridge;
-    }, [html, raw, frameId, kind]);
+    }, [html, raw, frameId, kind, css]);
 
     useEffect(() => {
         // 切换方案/示例时先释放旧高度，避免较高的旧预览把新卡片撑出大片空白。
         setHeight(FRAME_MIN_HEIGHT);
-    }, [html, raw, kind]);
+    }, [html, raw, kind, css]);
 
     useEffect(() => {
         const handleMessage = (event: MessageEvent) => {
