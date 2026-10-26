@@ -169,13 +169,27 @@ async function buildVnPromptMessages(
     const plain = text.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
     return plain.length > max ? `${plain.slice(0, max)}...` : plain;
   };
-  const archivedRecaps = vnSession.chapters
-    .slice(0, activeChapterIndex)
-    .map((chapter, index) => {
-      const summary = chapter.summaryContent?.trim();
-      return summary ? `第${index + 1}章《${chapter.title}》：${compact(summary, 500)}` : "";
-    })
-    .filter(Boolean);
+  const volumeChapterIds = new Set((vnSession.volumes ?? []).flatMap((volume) => volume.chapterIds));
+  const volumeRecaps = (vnSession.volumes ?? [])
+    .filter((volume) => volume.summary.trim())
+    .map((volume) => {
+      const indexes = vnSession.chapters
+        .filter((chapter) => volume.chapterIds.includes(chapter.id))
+        .map((chapter) => chapter.index + 1);
+      const range = indexes.length > 0 ? `第${Math.min(...indexes)}-${Math.max(...indexes)}章` : "";
+      return `${range ? `${range} ` : ""}合册《${volume.title}》：${compact(volume.summary, 700)}`;
+    });
+  const archivedRecaps = [
+    ...volumeRecaps,
+    ...vnSession.chapters
+      .slice(0, activeChapterIndex)
+      .filter((chapter) => !volumeChapterIds.has(chapter.id))
+      .map((chapter, index) => {
+        const summary = chapter.summaryContent?.trim();
+        return summary ? `第${index + 1}章《${chapter.title}》：${compact(summary, 500)}` : "";
+      })
+      .filter(Boolean),
+  ];
   const roundRecaps = currentHistory
     .filter((message) => message.role === "assistant" && message.roundSummary?.trim())
     .slice(-VN_RECAP_ROUND_LIMIT)

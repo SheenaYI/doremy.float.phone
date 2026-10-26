@@ -40,6 +40,10 @@ export type VnChapterMeta = {
   summaryTimestamp?: string;
   /** false = 章节总结只进入 VN 上下文，不写入记忆时间线；默认 true。 */
   summaryInMemory?: boolean;
+  /** 所属合册；有值时星空图用合册代替该章 */
+  volumeId?: string;
+  /** 正文消息是否已被合册清理（只保留摘要） */
+  messagesCleared?: boolean;
   beats?: VnBeat[];
   activeBeatIndex?: number;
 };
@@ -48,11 +52,24 @@ export type VnLayoutPrefs = {
   dialogueY: number;
 };
 
+export type VnVolume = {
+  id: string;
+  title: string;
+  chapterIds: string[];
+  summary: string;
+  createdAt: string;
+  /** false = 只作为归档展示与上下文，不写入记忆 */
+  summaryInMemory?: boolean;
+  /** true = 创建时已清理这些章节的正文消息 */
+  messagesCleared?: boolean;
+};
+
 export type VnSession = {
   id: string;
   characterId: string;
   updatedAt: string;
   chapters: VnChapterMeta[];
+  volumes?: VnVolume[];
   activeChapterIndex: number;
   lastMessageId?: string;
   lastMessagePreview?: string;

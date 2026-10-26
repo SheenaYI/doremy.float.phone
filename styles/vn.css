@@ -1249,3 +1249,305 @@
   .vn-status-float { width: 210px; }
   .vn-status-settings { padding: 12px; }
 }
+
+/* ═══ 漫卷 · 旧章合册票券 ═══ */
+.vnc-volume-ticket {
+  position: relative;
+  width: min(82%, 310px);
+  max-height: 78dvh;
+  overflow-y: auto;
+  padding: 15px 16px 12px;
+  border-radius: 4px;
+  background:
+    linear-gradient(180deg, rgba(255,252,244,.98), rgba(241,233,219,.98)),
+    #fbf7ee;
+  color: #302b24;
+  box-shadow: 0 18px 50px rgba(0,0,0,.42);
+  font-family: "Songti SC", "Noto Serif SC", serif;
+}
+
+.vnc-volume-ticket::before,
+.vnc-volume-ticket::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 8px;
+  background: radial-gradient(circle at 5px 0, transparent 4px, #fbf7ee 4.5px) 0 0 / 10px 8px repeat-x;
+  pointer-events: none;
+}
+.vnc-volume-ticket::before { top: -7px; }
+.vnc-volume-ticket::after { bottom: -7px; transform: rotate(180deg); }
+
+.vnc-volume-ticket > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-bottom: 7px;
+  border-bottom: 1px solid rgba(48,43,36,.22);
+}
+.vnc-volume-ticket > header span {
+  font: 700 8px/1 "Helvetica Neue", Arial, sans-serif;
+  letter-spacing: .2em;
+  color: #8a7d6a;
+}
+.vnc-volume-ticket > header button {
+  border: 0;
+  background: transparent;
+  color: #8a7d6a;
+  padding: 2px;
+  cursor: pointer;
+}
+.vnc-volume-ticket h2 {
+  margin: 10px 0 5px;
+  font: 800 25px/1.1 "Songti SC", "Noto Serif SC", serif;
+  letter-spacing: .02em;
+}
+.vnc-ticket-meta {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 5px 9px;
+  font: 9px/1.3 "Helvetica Neue", Arial, sans-serif;
+  color: #7e725f;
+}
+.vnc-ticket-meta em {
+  color: #b63d35;
+  font-style: normal;
+  font-weight: 700;
+}
+.vnc-ticket-perf {
+  height: 1px;
+  margin: 11px 0;
+  background: repeating-linear-gradient(90deg, rgba(48,43,36,.3) 0 4px, transparent 4px 8px);
+}
+.vnc-ticket-summary {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.75;
+  color: #4d463a;
+  white-space: pre-wrap;
+}
+.vnc-ticket-chapters {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.vnc-ticket-chapters > div {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 7px;
+}
+.vnc-ticket-chapters b {
+  font: 700 8px/1 "Helvetica Neue", Arial, sans-serif;
+  color: #b63d35;
+}
+.vnc-ticket-chapters span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: #3e382e;
+}
+.vnc-ticket-chapters em {
+  font: 8px/1 "Helvetica Neue", Arial, sans-serif;
+  font-style: normal;
+  color: #9b8e7b;
+}
+.vnc-volume-ticket > footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 7px;
+  border-top: 1px solid rgba(48,43,36,.18);
+  font: 8px/1 "Helvetica Neue", Arial, sans-serif;
+  letter-spacing: .08em;
+  color: #9b8e7b;
+}
+
+/* 星空图上的合册节点 */
+.vnc-volume-node {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  width: 158px;
+  min-height: 92px;
+  border: 1px solid rgba(255, 238, 204, .28);
+  border-radius: 3px;
+  padding: 9px 10px;
+  background:
+    linear-gradient(160deg, rgba(255,248,232,.16), rgba(20,16,28,.78)),
+    rgba(20,16,28,.7);
+  color: rgba(255,246,228,.9);
+  text-align: left;
+  box-shadow: 0 8px 26px rgba(0,0,0,.28);
+  cursor: pointer;
+  z-index: 3;
+}
+.vnc-volume-node:active { transform: translate(-50%, -50%) scale(.97); }
+.vnc-volume-node > span {
+  display: block;
+  font: 700 7px/1 "Helvetica Neue", Arial, sans-serif;
+  letter-spacing: .18em;
+  color: rgba(255,220,169,.62);
+}
+.vnc-volume-node > b {
+  display: block;
+  margin: 5px 0 4px;
+  font: 700 14px/1.25 "Songti SC", "Noto Serif SC", serif;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.vnc-volume-node > em {
+  display: block;
+  font: 8px/1.3 "Helvetica Neue", Arial, sans-serif;
+  font-style: normal;
+  color: rgba(255,238,204,.54);
+}
+
+/* 整理旧章 / 加载更早 */
+.vnc-top-actions { display: flex; gap: 2px; }
+.vnc-chapter-tools {
+  position: absolute;
+  z-index: 12;
+  right: 18px;
+  top: calc(var(--page-header-safe-top, 48px) + 52px);
+  display: flex;
+  gap: 5px;
+}
+.vnc-chapter-tools button {
+  border: 1px solid var(--vn-ui-border);
+  border-radius: 999px;
+  background: rgba(10,8,16,.55);
+  color: var(--vn-ui-text);
+  font-size: 10px;
+  padding: 6px 9px;
+  backdrop-filter: blur(8px);
+  cursor: pointer;
+}
+.vnc-load-older {
+  position: absolute;
+  z-index: 4;
+  left: 50%;
+  transform: translateX(-50%);
+  top: 14px;
+  border: 1px solid var(--vn-ui-border);
+  border-radius: 999px;
+  background: rgba(10,8,16,.5);
+  color: var(--vn-ui-text-dim);
+  font-size: 10px;
+  padding: 5px 10px;
+  cursor: pointer;
+}
+.vnc-select-bar {
+  position: absolute;
+  z-index: 30;
+  left: 50%;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 14px);
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px;
+  border: 1px solid var(--vn-ui-border);
+  border-radius: 999px;
+  background: rgba(10,8,16,.78);
+  backdrop-filter: blur(14px);
+  color: var(--vn-ui-text);
+  font-size: 10px;
+  white-space: nowrap;
+}
+.vnc-select-bar button {
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  padding: 6px 9px;
+  font-size: 10px;
+  cursor: pointer;
+}
+.vnc-select-bar button.is-primary { background: var(--vn-ui-accent-bg); }
+.vnc-node[data-selectable="true"] { cursor: pointer; }
+.vnc-node[data-selected="true"] .vnc-star-core { box-shadow: 0 0 0 4px rgba(255,220,150,.45), 0 0 20px rgba(255,220,150,.6); }
+.vnc-node[data-selected="true"]:after {
+  content: "✓";
+  position: absolute;
+  right: 0;
+  top: -4px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #d8b36a;
+  color: #1b1520;
+  font: 700 11px/18px Arial, sans-serif;
+  text-align: center;
+}
+
+.vnc-volume-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 10px 0;
+  font-size: 11px;
+  color: var(--vn-ui-text);
+}
+.vnc-volume-field input {
+  border: 1px solid var(--vn-ui-border);
+  border-radius: 8px;
+  background: rgba(255,255,255,.06);
+  color: inherit;
+  padding: 8px;
+  font-size: 12px;
+  outline: none;
+}
+.vnc-volume-chapters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  max-height: 110px;
+  overflow-y: auto;
+  margin-bottom: 8px;
+}
+.vnc-volume-chapters span {
+  padding: 3px 6px;
+  border: 1px solid var(--vn-ui-border);
+  border-radius: 999px;
+  font-size: 9px;
+  color: var(--vn-ui-text-dim);
+}
+.vnc-volume-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin: 8px 0;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--vn-ui-text);
+  cursor: pointer;
+}
+.vnc-volume-check input {
+  margin-top: 2px;
+  width: 14px;
+  height: 14px;
+  accent-color: #d8b36a;
+}
+.vnc-volume-check span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.vnc-volume-check em {
+  font-size: 9px;
+  font-style: normal;
+  color: var(--vn-ui-text-dim);
+}
+.vnc-volume-error {
+  margin: 7px 0;
+  color: #e59b8a;
+  font-size: 10px;
+  line-height: 1.45;
+}

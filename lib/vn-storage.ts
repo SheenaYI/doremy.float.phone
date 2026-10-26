@@ -1,8 +1,8 @@
 import Dexie from "dexie";
 import { formatChatTimestamp } from "./llm-prompt-assembler";
 import { estimateValueBytes } from "./data-management/serializers";
-import type { VnSession, VnMessage, VnChapterMeta, VnLayoutPrefs, VnBeat, VnFrameAudio } from "./vn-types";
-export type { VnSession, VnMessage, VnChapterMeta, VnLayoutPrefs, VnBeat };
+import type { VnSession, VnMessage, VnChapterMeta, VnLayoutPrefs, VnBeat, VnFrameAudio, VnVolume } from "./vn-types";
+export type { VnSession, VnMessage, VnChapterMeta, VnLayoutPrefs, VnBeat, VnVolume };
 
 class VnDatabase extends Dexie {
   sessions!: Dexie.Table<VnSession, string>;
@@ -413,6 +413,68 @@ export function archiveChapter(sessionId: string, chapterIndex: number): void {
   updateVnSession(sessionId, { chapters });
 }
 
+export type CreateVnVolumeInput = {
+  chapterIds: string[];
+  title: string;
+  summary: string;
+  deleteMessages?: boolean;
+  summaryInMemory?: boolean;
+};
+
+/** 把若干已归档章节合成一册。可只归档，也可同时清理这些章的正文消息。 */
+export function createVnVolume(sessionId: string, input: CreateVnVolumeInput): VnVolume | null {
+  const session = _sessionsCache.find((s) => s.id === sessionId);
+  if (!session) return null;
+  const ids = new Set(input.chapterIds);
+  const selected = session.chapters.filter((chapter) => ids.has(chapter.id));
+  if (selected.length === 0) return null;
+  if (selected.some((chapter) => !chapter.archived)) return null;
+
+  const volume: VnVolume = {
+    id: generateId("vn_vol"),
+    title: input.title.trim() || "旧章合册",
+    chapterIds: selected.map((chapter) => chapter.id),
+    summary: input.summary.trim(),
+    createdAt: new Date().toISOString(),
+    summaryInMemory: input.summaryInMemory !== false,
+    messagesCleared: input.deleteMessages === true,
+  };
+
+  const selectedIndexes = new Set(selected.map((chapter) => chapter.index));
+  if (input.deleteMessages) {
+    const idsToDelete = _messagesCache
+      .filter((message) => message.sessionId === sessionId && selectedIndexes.has(message.chapterIndex))
+      .map((message) => message.id);
+    if (idsToDelete.length > 0) {
+      const deleted = new Set(idsToDelete);
+      _messagesCache = _messagesCache.filter((message) => !deleted.has(message.id));
+      vnDb.messages.bulkDelete(idsToDelete).catch(() => undefined);
+    }
+  }
+
+  const chapters = session.chapters.map((chapter) => (
+    ids.has(chapter.id)
+      ? {
+          ...chapter,
+          archived: true,
+          volumeId: volume.id,
+          ...(input.deleteMessages ? { messagesCleared: true } : {}),
+        }
+      : chapter
+  ));
+
+  updateVnSession(sessionId, {
+    chapters,
+    volumes: [...(session.volumes ?? []), volume],
+  });
+  return volume;
+}
+
+export function loadVnVolumes(sessionId: string): VnVolume[] {
+  const session = _sessionsCache.find((s) => s.id === sessionId);
+  return session?.volumes ? [...session.volumes] : [];
+}
+
 export function updateChapterSummary(
   sessionId: string,
   chapterIndex: number,
@@ -610,7 +672,10 @@ export function loadVnProjectionEntries(
 
   const projections: VnProjectionEntry[] = [];
 
+  const volumeChapterIds = new Set((session.volumes ?? []).flatMap((volume) => volume.chapterIds));
   for (const chapter of session.chapters) {
+    // 合册里的章节不再逐章投影，避免与合册摘要重复。
+    if (volumeChapterIds.has(chapter.id)) continue;
     // 未归档章节的滚动总结同样投影：漫卷每 N 轮自动总结会把章节总结写入
     // summaryContent，无需等归档即可进入统一时间线参与短期/长期记忆
     if (!chapter.summaryContent) continue;
@@ -627,6 +692,19 @@ export function loadVnProjectionEntries(
       id: `vn_projection_${chapter.id}`,
       timestamp: ts,
       content: `[事件 ${formattedTs}] ${snippet}`,
+    });
+  }
+
+  for (const volume of session.volumes ?? []) {
+    if (volume.summaryInMemory === false) continue;
+    const snippet = compactText(volume.summary, 500);
+    if (!snippet) continue;
+    if (options?.afterTimestamp && volume.createdAt <= options.afterTimestamp) continue;
+    const formattedTs = formatChatTimestamp(volume.createdAt);
+    projections.push({
+      id: `vn_volume_${volume.id}`,
+      timestamp: volume.createdAt,
+      content: `[事件 ${formattedTs}] ${volume.title}：${snippet}`,
     });
   }
 
