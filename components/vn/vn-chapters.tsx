@@ -720,7 +720,18 @@ export function VnChapters({ characterId, onClose, onSelect, vnTheme }: VnChapte
                   onClick={() => setVolumeTicket(item.volume)}
                 >
                   <span className="vnc-volume-orbit" aria-hidden="true">
-                    <i /><i /><i />
+                    <svg viewBox="0 0 100 100" focusable="false">
+                      <g className="vnc-ripple-rings">
+                        <circle className="vnc-ripple-ring r1" cx="50" cy="50" r="43" />
+                        <circle className="vnc-ripple-ring r2" cx="50" cy="50" r="35" />
+                        <circle className="vnc-ripple-ring r3" cx="50" cy="50" r="27" />
+                        <circle className="vnc-ripple-ring r4" cx="50" cy="50" r="19" />
+                        <circle className="vnc-ripple-ring r5" cx="50" cy="50" r="11" />
+                        <path className="vnc-ripple-arc" d="M 8 52 A 42 42 0 0 1 25 15" />
+                        <path className="vnc-ripple-arc" d="M 78 18 A 36 36 0 0 1 88 46" />
+                      </g>
+                      <circle className="vnc-ripple-core" cx="50" cy="50" r="2.4" />
+                    </svg>
                   </span>
                   <span className="vnc-volume-kicker">合册 · {item.chapters.length} 章</span>
                   <b>{item.volume.title}</b>
