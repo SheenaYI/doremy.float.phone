@@ -416,7 +416,8 @@ export function archiveChapter(sessionId: string, chapterIndex: number): void {
 export function updateChapterSummary(
   sessionId: string,
   chapterIndex: number,
-  summary: string
+  summary: string,
+  options?: { inMemory?: boolean }
 ): void {
   const session = _sessionsCache.find((s) => s.id === sessionId);
   if (!session) return;
@@ -429,6 +430,7 @@ export function updateChapterSummary(
     ...ch,
     summaryContent: summary,
     summaryTimestamp: new Date().toISOString(),
+    ...(options?.inMemory !== undefined ? { summaryInMemory: options.inMemory } : {}),
   };
 
   updateVnSession(sessionId, { chapters });
@@ -447,7 +449,7 @@ export function clearChapterSummary(
   const ch = chapters[chapterIndex];
   if (!ch) return;
 
-  const { summaryContent: _summaryContent, summaryTimestamp: _summaryTimestamp, ...rest } = ch;
+  const { summaryContent: _summaryContent, summaryTimestamp: _summaryTimestamp, summaryInMemory: _summaryInMemory, ...rest } = ch;
   chapters[chapterIndex] = rest;
 
   updateVnSession(sessionId, { chapters });
@@ -612,6 +614,8 @@ export function loadVnProjectionEntries(
     // 未归档章节的滚动总结同样投影：漫卷每 N 轮自动总结会把章节总结写入
     // summaryContent，无需等归档即可进入统一时间线参与短期/长期记忆
     if (!chapter.summaryContent) continue;
+    // 归档时可以选择「只进上下文，不写入记忆」；默认（undefined）保持旧行为。
+    if (chapter.summaryInMemory === false) continue;
     const ts = chapter.summaryTimestamp || session.updatedAt;
     if (options?.afterTimestamp && ts <= options.afterTimestamp) continue;
 

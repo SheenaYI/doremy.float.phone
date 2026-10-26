@@ -83,14 +83,16 @@ export function VnChapters({ characterId, onClose, onSelect, vnTheme }: VnChapte
       const messages = loadVnMessagesForChapter(session.id, chapterIndex);
       if (messages.length === 0) return;
       const summary = await summarizeVnChapter(characterId, messages);
-      updateChapterSummary(session.id, chapterIndex, summary);
+      updateChapterSummary(session.id, chapterIndex, summary, {
+        inMemory: chapters[chapterIndex]?.summaryInMemory !== false,
+      });
       forceUpdate((n) => n + 1);
     } catch (err) {
       console.error("VN chapter summarization failed:", err);
     } finally {
       setSummarizing(null);
     }
-  }, [session.id, characterId]);
+  }, [session.id, characterId, chapters]);
 
   const handleClearSummary = useCallback((chapterIndex: number) => {
     clearChapterSummary(session.id, chapterIndex);
@@ -538,7 +540,11 @@ export function VnChapters({ characterId, onClose, onSelect, vnTheme }: VnChapte
                 <div className="vnc-label">
                   <div className="vnc-chapter-title">{ch.title}</div>
                   {ch.subtitle && <div className="vnc-chapter-sub">{ch.subtitle}</div>}
-                  {ch.summaryContent && <div className="vnc-summary-badge">已生成记忆</div>}
+                  {ch.summaryContent && (
+                    <div className="vnc-summary-badge">
+                      {ch.summaryInMemory === false ? "仅上下文" : "已生成记忆"}
+                    </div>
+                  )}
                 </div>
                 {/* 章节操作：有总结记忆 → 可清除；已归档且无总结 → 可生成 */}
                 {ch.summaryContent && (

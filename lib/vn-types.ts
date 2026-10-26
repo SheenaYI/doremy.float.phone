@@ -35,6 +35,8 @@ export type VnChapterMeta = {
   archived: boolean;
   summaryContent?: string;
   summaryTimestamp?: string;
+  /** false = 章节总结只进入 VN 上下文，不写入记忆时间线；默认 true。 */
+  summaryInMemory?: boolean;
   beats?: VnBeat[];
   activeBeatIndex?: number;
 };

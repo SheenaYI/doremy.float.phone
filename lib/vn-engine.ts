@@ -29,6 +29,9 @@ import type { ChatMessage } from "./chat-storage";
 import type { VnFrame, VnOptions } from "./vn-types";
 import { simpleLLMCall } from "./api-helpers";
 
+const VN_RAW_HISTORY_LIMIT = 40;
+const VN_RECAP_ROUND_LIMIT = 12;
+
 export type VnGenerationResult = {
   rawText: string;
   frames: VnFrame[];
@@ -101,7 +104,8 @@ export function resolveVnConfigs(characterId: string): {
 
 export async function generateVnCompletion(
   characterId: string,
-  history: VnMessage[]
+  history: VnMessage[],
+  options?: { chapterIndex?: number }
 ): Promise<VnGenerationResult> {
   const character = loadCharacters().find((c) => c.id === characterId);
   if (!character) {
@@ -109,7 +113,7 @@ export async function generateVnCompletion(
   }
 
   const { apiConfig, preset, regexes, worldBooks } = resolveVnConfigs(characterId);
-  const llmMessages = await buildVnPromptMessages(characterId, history, preset, regexes, worldBooks);
+  const llmMessages = await buildVnPromptMessages(characterId, history, preset, regexes, worldBooks, options?.chapterIndex);
 
   const rawOutput = await sendLLMRequest(apiConfig, preset, llmMessages, regexes, {
     characterName: character.name,
@@ -135,7 +139,8 @@ async function buildVnPromptMessages(
   history: VnMessage[],
   preset: PresetConfig | null,
   regexes: RegexConfig[],
-  worldBooks: WorldBookConfig[]
+  worldBooks: WorldBookConfig[],
+  chapterIndex?: number
 ): Promise<LLMMessage[]> {
   const character = loadCharacters().find((c) => c.id === characterId);
   if (!character) {
@@ -143,13 +148,54 @@ async function buildVnPromptMessages(
   }
 
   const userIdentity = resolveUserIdentity(characterId, "vn");
-  const historyMessages = history.map(toHistoryMessage);
+  const vnSession = createOrGetVnSession(characterId);
+  const activeChapterIndex = typeof chapterIndex === "number" ? chapterIndex : vnSession.activeChapterIndex;
+  // 只把当前章节的最近窗口送进 prompt；更早内容由章节摘要/每轮 summary 承担。
+  const currentHistory = history
+    .filter((message) => message.chapterIndex === activeChapterIndex)
+    .slice(-VN_RAW_HISTORY_LIMIT);
+  const historyMessages = currentHistory.map(toHistoryMessage);
   const memConfig = loadMemoryConfig();
   const { recentBlocks, truncatedHistory, wbActivationContext, unifiedRecentItems } = prepareShortTermContext(
     characterId,
     "vn",
     { userName: userIdentity?.name ?? "用户", history: historyMessages }
   );
+
+  const compact = (text: string, max: number) => {
+    const plain = text.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+    return plain.length > max ? `${plain.slice(0, max)}...` : plain;
+  };
+  const archivedRecaps = vnSession.chapters
+    .slice(0, activeChapterIndex)
+    .map((chapter, index) => {
+      const summary = chapter.summaryContent?.trim();
+      return summary ? `第${index + 1}章《${chapter.title}》：${compact(summary, 500)}` : "";
+    })
+    .filter(Boolean);
+  const roundRecaps = currentHistory
+    .filter((message) => message.role === "assistant" && message.roundSummary?.trim())
+    .slice(-VN_RECAP_ROUND_LIMIT)
+    .map((message) => `- ${compact(message.roundSummary!.trim(), 220)}`);
+  const recap = [...archivedRecaps, ...roundRecaps].join("\n");
+  if (recap) {
+    // 兼容两种装配模式：chronological 模式走 unifiedRecentItems，旧模式走 recentBlocks。
+    unifiedRecentItems.push({
+      kind: "event",
+      timestamp: currentHistory[0]?.createdAt ?? new Date().toISOString(),
+      sourceApp: "vn",
+      sourceTag: "recent_vn_recap",
+      text: recap,
+    });
+  }
+  const blocksWithRecap = [...recentBlocks];
+  if (recap) {
+    // 插在「包裹当前历史」的空 block 之前，避免破坏 assembler 的历史包装。
+    const insertAt = blocksWithRecap.length > 0 && !blocksWithRecap[blocksWithRecap.length - 1].content
+      ? blocksWithRecap.length - 1
+      : blocksWithRecap.length;
+    blocksWithRecap.splice(insertAt, 0, { tag: "recent_vn_recap", content: recap });
+  }
 
   const chatBilingualInstruction = buildVnBilingualInstruction(
     loadVnConfig("bilingualTranslationEnabled") !== "0",
@@ -172,14 +218,14 @@ async function buildVnPromptMessages(
     coreMemories: coreMemories ? formatCoreMemories(coreMemories) : "",
     longTermMemories: memories ? formatLongTermMemories(memories) : "",
     worldBookActivationContext: wbActivationContext,
-    recentBlocks,
+    recentBlocks: blocksWithRecap,
     unifiedRecentItems,
     chatBilingualInstruction,
     vnScenes: getVnSceneNames(characterId),
     vnSprites: getVnSpriteNames(characterId),
     ...(() => {
-      const sess = createOrGetVnSession(characterId);
-      const ch = sess.chapters[sess.activeChapterIndex];
+      const sess = vnSession;
+      const ch = sess.chapters[activeChapterIndex];
       if (!ch) return {};
       const { beatsList, currentBeat } = formatBeatsForPrompt(ch);
       return { vnBeats: beatsList, vnCurrentBeat: currentBeat };
@@ -196,14 +242,15 @@ export type VnPreviewResult = {
 
 export async function previewVnPromptPayload(
   characterId: string,
-  history: VnMessage[]
+  history: VnMessage[],
+  options?: { chapterIndex?: number }
 ): Promise<VnPreviewResult> {
   const character = loadCharacters().find((c) => c.id === characterId);
   if (!character) {
     throw new ChatEngineError(`Character not found: ${characterId}`);
   }
   const { apiConfig, preset, regexes, worldBooks } = resolveVnConfigs(characterId);
-  const llmMessages = await buildVnPromptMessages(characterId, history, preset, regexes, worldBooks);
+  const llmMessages = await buildVnPromptMessages(characterId, history, preset, regexes, worldBooks, options?.chapterIndex);
   return {
     messages: previewMessagesForApi(apiConfig, preset, llmMessages),
     characterName: character.name,

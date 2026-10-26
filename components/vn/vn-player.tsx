@@ -6,7 +6,6 @@ import { ArrowLeft, ArrowRight, Clock, EyeOff, Play, Pause, Volume2, Eye, Chevro
 import { BilingualTextBlock } from "@/components/chat/message-bubble";
 import {
   createOrGetVnSession,
-  loadVnMessages,
   loadVnMessagesForChapter,
   pushVnMessage,
   updateChapterStartMessageId,
@@ -101,6 +100,7 @@ export function VnPlayer({ characterId, chapterIndex, onClose, onChapterEnd, vnT
   const [isGenerating, setIsGenerating] = useState(false);
   const [showArchiveConfirm, setShowArchiveConfirm] = useState(false);
   const [isArchiving, setIsArchiving] = useState(false);
+  const [writeChapterSummaryToMemory, setWriteChapterSummaryToMemory] = useState(true);
   const [showScenePicker, setShowScenePicker] = useState(false);
   const [showReplayConfirm, setShowReplayConfirm] = useState(false);
   const [isReplaying, setIsReplaying] = useState(false);
@@ -522,6 +522,9 @@ export function VnPlayer({ characterId, chapterIndex, onClose, onChapterEnd, vnT
 
   // Keep ref in sync
   useEffect(() => { isGeneratingRef.current = isGenerating; }, [isGenerating]);
+  const isTypingRef = useRef(isTyping);
+  useEffect(() => { isTypingRef.current = isTyping; }, [isTyping]);
+  const memoryWorkScheduledRef = useRef(false);
 
   // ── Auto Mode ──
   useEffect(() => {
@@ -533,15 +536,29 @@ export function VnPlayer({ characterId, chapterIndex, onClose, onChapterEnd, vnT
 
   // ── 漫卷自动记忆：每轮计数并触发统一长期总结。每轮的 <summary> 已经
   // roundSummary 字段实时投影进短期记忆，不依赖归档或阈值。──
-  const afterVnGeneration = useCallback(async (charId: string) => {
-    try {
-      incrementEventCounter(charId);
-      incrementEventCounter(charId);
+  const afterVnGeneration = useCallback((charId: string) => {
+    incrementEventCounter(charId);
+    incrementEventCounter(charId);
+    if (memoryWorkScheduledRef.current) return;
+    memoryWorkScheduledRef.current = true;
+
+    // 不跟 startTyping 抢主线程：等这一轮打字/生成结束，再在空闲时段做记忆整理。
+    // 真正的全量装配仍是同步的，但不会再在“第一句刚出现”时卡住对话框。
+    const runWhenIdle = (attempt = 0) => {
+      if (attempt > 80) {
+        memoryWorkScheduledRef.current = false;
+        return;
+      }
+      if (isTypingRef.current || isGeneratingRef.current) {
+        window.setTimeout(() => runWhenIdle(attempt + 1), 500);
+        return;
+      }
       const char = loadCharacters().find((c) => c.id === charId);
-      await maybeRunSummarization(charId, char?.name ?? "");
-    } catch (err) {
-      console.warn("[VN] Memory counter/summarization failed:", err);
-    }
+      void maybeRunSummarization(charId, char?.name ?? "")
+        .catch((err) => console.warn("[VN] Memory summarization failed:", err))
+        .finally(() => { memoryWorkScheduledRef.current = false; });
+    };
+    window.setTimeout(() => runWhenIdle(0), 600);
   }, []);
 
   // ── Submit user input ──
@@ -582,8 +599,8 @@ export function VnPlayer({ characterId, chapterIndex, onClose, onChapterEnd, vnT
 
     try {
       // Get all messages in session (cross-chapter context)
-      const allMessages = loadVnMessages(session.id);
-      const result = await generateVnCompletion(characterId, allMessages);
+      const allMessages = loadVnMessagesForChapter(session.id, chapterIndex);
+      const result = await generateVnCompletion(characterId, allMessages, { chapterIndex });
 
       // Save AI response
       const aiMsg = pushVnMessage({
@@ -713,8 +730,8 @@ export function VnPlayer({ characterId, chapterIndex, onClose, onChapterEnd, vnT
     }
 
     try {
-      const allMessages = loadVnMessages(session.id);
-      const result = await generateVnCompletion(characterId, allMessages);
+      const allMessages = loadVnMessagesForChapter(session.id, chapterIndex);
+      const result = await generateVnCompletion(characterId, allMessages, { chapterIndex });
       const aiMsg = pushVnMessage({ sessionId: session.id, role: "assistant", rawContent: result.rawText, chapterIndex, roundSummary: result.summaryText });
       updateChapterStartMessageId(session.id, chapterIndex, userMsg.id);
 
@@ -819,8 +836,8 @@ export function VnPlayer({ characterId, chapterIndex, onClose, onChapterEnd, vnT
     setIsGenerating(true);
     setWaitingForInput(false);
     try {
-      const allMessages = loadVnMessages(session.id);
-      const result = await generateVnCompletion(characterId, allMessages);
+      const allMessages = loadVnMessagesForChapter(session.id, chapterIndex);
+      const result = await generateVnCompletion(characterId, allMessages, { chapterIndex });
       const aiMsg = pushVnMessage({ sessionId: session.id, role: "assistant", rawContent: result.rawText, chapterIndex, roundSummary: result.summaryText });
       rebuildFrames();
       // Play new AI frames
@@ -861,8 +878,8 @@ export function VnPlayer({ characterId, chapterIndex, onClose, onChapterEnd, vnT
     setIsGenerating(true);
     setWaitingForInput(false);
     try {
-      const allMessages = loadVnMessages(session.id);
-      const result = await generateVnCompletion(characterId, allMessages);
+      const allMessages = loadVnMessagesForChapter(session.id, chapterIndex);
+      const result = await generateVnCompletion(characterId, allMessages, { chapterIndex });
       const aiMsg = pushVnMessage({ sessionId: session.id, role: "assistant", rawContent: result.rawText, chapterIndex, roundSummary: result.summaryText });
       rebuildFrames();
       // Play new AI frames
@@ -1093,7 +1110,7 @@ export function VnPlayer({ characterId, chapterIndex, onClose, onChapterEnd, vnT
             <Clock size={18} />
           </button>
           {!isArchived && (
-            <button className="vn-topbar-btn" onClick={() => setShowArchiveConfirm(true)} title="归档章节">
+            <button className="vn-topbar-btn" onClick={() => { setWriteChapterSummaryToMemory(true); setShowArchiveConfirm(true); }} title="归档章节">
               <Archive size={18} />
             </button>
           )}
@@ -1438,6 +1455,22 @@ export function VnPlayer({ characterId, chapterIndex, onClose, onChapterEnd, vnT
           </div>
           <div className="vn-end-line" />
           {!isArchiving && (
+            <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 14, color: "rgba(255,255,255,0.78)", fontSize: 12, cursor: "pointer" }}>
+              <input
+                type="checkbox"
+                checked={writeChapterSummaryToMemory}
+                onChange={(event) => setWriteChapterSummaryToMemory(event.target.checked)}
+                style={{ accentColor: "#d8b36a", width: 15, height: 15 }}
+              />
+              <span>
+                将章节总结写入记忆
+                <span style={{ display: "block", marginTop: 2, opacity: 0.55, fontSize: 10 }}>
+                  关闭后只用于 VN 剧情上下文，不进入记忆时间线
+                </span>
+              </span>
+            </label>
+          )}
+          {!isArchiving && (
             <div style={{ display: "flex", gap: 16, marginTop: 16 }}>
               <button className="vn-end-btn" onClick={() => setShowArchiveConfirm(false)}>
                 返回
@@ -1454,7 +1487,7 @@ export function VnPlayer({ characterId, chapterIndex, onClose, onChapterEnd, vnT
                     try {
                       if (chapterMessages.length === 0) return;
                       const summary = await summarizeVnChapter(characterId, chapterMessages);
-                      updateChapterSummary(session.id, chapterIndex, summary);
+                      updateChapterSummary(session.id, chapterIndex, summary, { inMemory: writeChapterSummaryToMemory });
                     } catch (err) {
                       // 总结失败不影响归档；章节页的书本按钮仍可手动补总结
                       console.warn("[VN] Auto chapter summarization failed:", err);
