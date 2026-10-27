@@ -18,10 +18,10 @@ if (!ksFile && ksBase64) {
     generated.bytes = ksBase64.decodeBase64()
     ksFile = generated.absolutePath
 }
-def storePassword = System.getenv("SHELL_KEYSTORE_PASSWORD")
-def keyAlias = System.getenv("SHELL_KEY_ALIAS")
-def keyPassword = System.getenv("SHELL_KEY_PASSWORD")
-def signingConfigured = [ksFile, storePassword, keyAlias, keyPassword].every { it }
+def signingStorePassword = System.getenv("SHELL_KEYSTORE_PASSWORD")
+def signingKeyAlias = System.getenv("SHELL_KEY_ALIAS")
+def signingKeyPassword = System.getenv("SHELL_KEY_PASSWORD")
+def signingConfigured = [ksFile, signingStorePassword, signingKeyAlias, signingKeyPassword].every { it }
 if (ksFile && !signingConfigured) {
     throw new GradleException("APK signing is partially configured: set SHELL_KEYSTORE_BASE64/SHELL_KEYSTORE_FILE, SHELL_KEYSTORE_PASSWORD, SHELL_KEY_ALIAS and SHELL_KEY_PASSWORD together.")
 }
@@ -56,9 +56,9 @@ android {
         signingConfigs {
             release {
                 storeFile file(ksFile)
-                storePassword storePassword
-                keyAlias keyAlias
-                keyPassword keyPassword
+                storePassword signingStorePassword
+                keyAlias signingKeyAlias
+                keyPassword signingKeyPassword
             }
         }
     }
