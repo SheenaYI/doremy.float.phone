@@ -37,9 +37,11 @@ jobs:
 
       - name: Decode keystore (optional)
         if: ${{ env.SHELL_KEYSTORE_BASE64 != '' }}
+        shell: bash
         run: |
-          echo "$SHELL_KEYSTORE_BASE64" | base64 -d > /tmp/shell.keystore
-          echo "SHELL_KEYSTORE_FILE=/tmp/shell.keystore" >> "$GITHUB_ENV"
+          printf '%s' "$SHELL_KEYSTORE_BASE64" | tr -d '\r\n' | base64 --decode > "$RUNNER_TEMP/shell.keystore"
+          chmod 600 "$RUNNER_TEMP/shell.keystore"
+          echo "SHELL_KEYSTORE_FILE=$RUNNER_TEMP/shell.keystore" >> "$GITHUB_ENV"
 
       - name: Build APKs
         run: gradle -p android-shell assembleDebug assembleRelease
@@ -49,9 +51,11 @@ jobs:
         with:
           name: float-shell-debug
           path: android-shell/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
 
       - name: Upload release APK
         uses: actions/upload-artifact@v4
         with:
           name: float-shell-release
           path: android-shell/app/build/outputs/apk/release/*.apk
+          if-no-files-found: error

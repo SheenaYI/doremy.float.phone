@@ -5,7 +5,26 @@ plugins {
 
 // 签名：CI 里通过环境变量注入 keystore（见 android-shell/README.md）；
 // 没有配置时 release 构建产出未签名 APK，debug 构建始终可直接安装测试。
+//
+// 支持两种入口：
+// 1) workflow 把 SHELL_KEYSTORE_BASE64 解码后写入临时文件，并设置 SHELL_KEYSTORE_FILE；
+// 2) 本地/其它 CI 直接给 SHELL_KEYSTORE_BASE64，Gradle 自己解码到系统临时目录。
 def ksFile = System.getenv("SHELL_KEYSTORE_FILE")
+def ksBase64 = System.getenv("SHELL_KEYSTORE_BASE64")
+if (!ksFile && ksBase64) {
+    def signingDir = new File(System.getProperty("java.io.tmpdir"), "shell-signing")
+    signingDir.mkdirs()
+    def generated = new File(signingDir, "release-${System.currentTimeMillis()}.jks")
+    generated.bytes = ksBase64.decodeBase64()
+    ksFile = generated.absolutePath
+}
+def storePassword = System.getenv("SHELL_KEYSTORE_PASSWORD")
+def keyAlias = System.getenv("SHELL_KEY_ALIAS")
+def keyPassword = System.getenv("SHELL_KEY_PASSWORD")
+def signingConfigured = [ksFile, storePassword, keyAlias, keyPassword].every { it }
+if (ksFile && !signingConfigured) {
+    throw new GradleException("APK signing is partially configured: set SHELL_KEYSTORE_BASE64/SHELL_KEYSTORE_FILE, SHELL_KEYSTORE_PASSWORD, SHELL_KEY_ALIAS and SHELL_KEY_PASSWORD together.")
+}
 def siteUrl = (System.getenv("SHELL_SITE_URL") ?: "https://example.invalid").replaceAll('/+$', '')
 
 android {
@@ -33,13 +52,13 @@ android {
 
     buildFeatures { buildConfig true }
 
-    if (ksFile) {
+    if (signingConfigured) {
         signingConfigs {
             release {
                 storeFile file(ksFile)
-                storePassword System.getenv("SHELL_KEYSTORE_PASSWORD")
-                keyAlias System.getenv("SHELL_KEY_ALIAS")
-                keyPassword System.getenv("SHELL_KEY_PASSWORD")
+                storePassword storePassword
+                keyAlias keyAlias
+                keyPassword keyPassword
             }
         }
     }
@@ -47,7 +66,7 @@ android {
     buildTypes {
         release {
             minifyEnabled false
-            if (ksFile) signingConfig signingConfigs.release
+            if (signingConfigured) signingConfig signingConfigs.release
         }
         debug {
             // 有固定签名时 debug 也用同一把钥匙。
@@ -55,7 +74,7 @@ android {
             // 签名一变就只能卸载重装，App 数据（WebView 沙盒里的聊天记录、
             // 角色卡）会一起丢。统一签名后 debug / release 两个包可以互相
             // 覆盖安装，选哪个都不会再触发「应用未安装」。
-            if (ksFile) signingConfig signingConfigs.release
+            if (signingConfigured) signingConfig signingConfigs.release
         }
     }
     compileOptions {
