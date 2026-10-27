@@ -5204,3 +5204,62 @@
 .diary-mag-months button[data-active="true"] i {
   display: none;
 }
+
+/* 添忆 · 聊天来源扩展 */
+.diary-attachment-chat-sessions {
+  display: flex;
+  gap: 5px;
+  overflow-x: auto;
+  padding: 2px 0 7px;
+  margin-bottom: 2px;
+}
+
+.diary-attachment-chat-sessions button {
+  flex: none;
+  max-width: 190px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border: 1px solid rgba(90, 80, 60, 0.14);
+  border-radius: 999px;
+  background: transparent;
+  color: rgba(90, 74, 52, 0.62);
+  font-size: calc(9px * var(--app-text-scale, 1));
+  padding: 5px 8px;
+  cursor: pointer;
+}
+
+.diary-attachment-chat-sessions button[data-active="true"] {
+  background: #2f2b25;
+  border-color: #2f2b25;
+  color: #fffaf0;
+}
+
+.diary-attachment-chat-search {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid rgba(90, 80, 60, 0.14);
+  border-radius: 9px;
+  background: rgba(255, 252, 246, 0.56);
+  color: #3c382f;
+  font-size: calc(10px * var(--app-text-scale, 1));
+  padding: 7px 9px;
+  outline: none;
+  margin-bottom: 5px;
+}
+
+.diary-attachment-chat-search::placeholder {
+  color: rgba(90, 74, 52, 0.4);
+}
+
+.diary-attachment-load-more {
+  display: block;
+  width: 100%;
+  border: 0;
+  border-top: 1px solid rgba(90, 80, 60, 0.1);
+  background: transparent;
+  color: #8a6a3d;
+  font-size: calc(9.5px * var(--app-text-scale, 1));
+  padding: 10px 4px;
+  cursor: pointer;
+}

@@ -127,7 +127,9 @@ export function ApiSettings() {
             if (!Number.isFinite(n) || n < 0) return;
             entry[field] = n;
         }
-        const isEmpty = entry.input === undefined && entry.output === undefined && entry.perCall === undefined;
+        // mode 本身也是一项有效配置：刚切到「按次」、还没填价格时不能把整条删掉，
+        // 否则 select 的受控值会退回默认的 per_token，看起来就是「按次选不了」。
+        const isEmpty = !entry.mode && entry.input === undefined && entry.output === undefined && entry.perCall === undefined;
         if (isEmpty) {
             delete table[model];
         } else {

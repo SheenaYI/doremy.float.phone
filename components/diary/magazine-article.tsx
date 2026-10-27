@@ -54,8 +54,13 @@ export function DiaryMagazineArticle({
     const viewport = viewportRef.current;
     const flow = flowRef.current;
     if (!viewport || !flow) return;
-    const width = viewport.clientWidth;
-    const height = viewport.clientHeight;
+    // clientWidth/Height 包含 viewport 的内边距；页面宽度应该用内容盒，
+    // 否则多栏 flow 会比可视区域宽出左右 padding，右侧文字被裁掉。
+    const styles = window.getComputedStyle(viewport);
+    const paddingX = (parseFloat(styles.paddingLeft) || 0) + (parseFloat(styles.paddingRight) || 0);
+    const paddingY = (parseFloat(styles.paddingTop) || 0) + (parseFloat(styles.paddingBottom) || 0);
+    const width = Math.max(1, viewport.clientWidth - paddingX);
+    const height = Math.max(1, viewport.clientHeight - paddingY);
     if (width <= 0 || height <= 0) return;
     flow.style.width = `${width}px`;
     flow.style.height = `${height}px`;

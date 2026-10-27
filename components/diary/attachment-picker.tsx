@@ -40,25 +40,60 @@ export function DiaryAttachmentPicker({
   const [tab, setTab] = useState<PickerTab>("chat");
   const [tracks, setTracks] = useState<MusicTrack[]>([]);
   const [busy, setBusy] = useState(false);
+  const [selectedSessionId, setSelectedSessionId] = useState("");
+  const [chatLimit, setChatLimit] = useState(60);
+  const [chatQuery, setChatQuery] = useState("");
 
   useEffect(() => {
     void loadAllTracks().then(setTracks).catch(() => setTracks([]));
   }, []);
 
-  const session = useMemo(
+
+  const chatSessions = useMemo(
     () => loadChatSessions()
-      .filter(item => !item.isGroup && item.contactId === characterId)
-      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0] ?? null,
+      .filter(item => item.isGroup
+        ? item.participantIds?.includes(characterId)
+        : item.contactId === characterId)
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
     [characterId],
   );
-  const messages = useMemo(
+  const session = useMemo(
+    () => chatSessions.find(item => item.id === selectedSessionId) ?? chatSessions[0] ?? null,
+    [chatSessions, selectedSessionId],
+  );
+  useEffect(() => {
+    setSelectedSessionId(current => (
+      current && chatSessions.some(item => item.id === current)
+        ? current
+        : chatSessions[0]?.id ?? ""
+    ));
+    setChatLimit(60);
+    setChatQuery("");
+  }, [characterId, chatSessions]);
+
+  const allChatMessages = useMemo(
     () => session
-      ? loadChatMessages(session.id).filter(message => message.role === "user" || message.role === "assistant").slice(-40).reverse()
+      ? loadChatMessages(session.id)
+        .filter(message => (message.role === "user" || message.role === "assistant")
+          && !message.isRetracted
+          && message.content.trim())
+        .slice()
+        .reverse()
       : [],
     [session],
   );
+  const matchingChatMessages = useMemo(() => {
+    const query = chatQuery.trim().toLowerCase();
+    return query
+      ? allChatMessages.filter(message => message.content.toLowerCase().includes(query))
+      : allChatMessages;
+  }, [allChatMessages, chatQuery]);
+  const messages = useMemo(
+    () => matchingChatMessages.slice(0, chatLimit),
+    [matchingChatMessages, chatLimit],
+  );
   const sharedMusic = useMemo(
-    () => messages
+    () => allChatMessages
       .filter(message => message.mediaType === "music_share" || message.mediaType === "music")
       .map(message => ({
         id: message.id,
@@ -67,7 +102,7 @@ export function DiaryAttachmentPicker({
         coverUrl: message.mediaData?.musicCoverUrl || "",
       }))
       .slice(0, 20),
-    [messages],
+    [allChatMessages],
   );
   const experiences = useMemo(
     () => loadCalendarDayRecords("character", characterId)
@@ -128,28 +163,68 @@ export function DiaryAttachmentPicker({
 
         <div className="diary-attachment-body hide-scrollbar">
           {tab === "chat" ? (
-            messages.length === 0 ? <p className="diary-attachment-empty">还没有可以引用的私聊记录。</p> : messages.map(message => (
-              <button
-                key={message.id}
-                type="button"
-                className="diary-attachment-chat-row"
-                onClick={() => {
-                  onAdd({
-                    id: makeId("diary_attachment"),
-                    type: "chat",
-                    sessionId: session?.id ?? "",
-                    messageIds: [message.id],
-                    excerpt: message.content.slice(0, 400),
-                    role: message.role === "assistant" ? "assistant" : "user",
-                    createdAt: new Date().toISOString(),
-                  });
-                  onClose();
-                }}
-              >
-                <span>{message.role === "user" ? "我" : "TA"}</span>
-                <p>{message.content}</p>
-              </button>
-            ))
+            <>
+              {chatSessions.length > 1 ? (
+                <div className="diary-attachment-chat-sessions hide-scrollbar">
+                  {chatSessions.map(item => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      data-active={session?.id === item.id ? "true" : undefined}
+                      onClick={() => {
+                        setSelectedSessionId(item.id);
+                        setChatLimit(60);
+                        setChatQuery("");
+                      }}
+                    >
+                      {item.isGroup ? `群聊 · ${item.groupName || "未命名群聊"}` : "与TA的私聊"}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+              <input
+                type="search"
+                className="diary-attachment-chat-search"
+                value={chatQuery}
+                onChange={event => { setChatQuery(event.target.value); setChatLimit(60); }}
+                placeholder="搜索聊天内容"
+              />
+              {matchingChatMessages.length === 0 ? (
+                <p className="diary-attachment-empty">
+                  {chatQuery.trim() ? "没有匹配的聊天记录。" : "还没有可以引用的聊天记录。"}
+                </p>
+              ) : messages.map(message => (
+                <button
+                  key={message.id}
+                  type="button"
+                  className="diary-attachment-chat-row"
+                  onClick={() => {
+                    onAdd({
+                      id: makeId("diary_attachment"),
+                      type: "chat",
+                      sessionId: session?.id ?? "",
+                      messageIds: [message.id],
+                      excerpt: message.content.slice(0, 400),
+                      role: message.role === "assistant" ? "assistant" : "user",
+                      createdAt: new Date().toISOString(),
+                    });
+                    onClose();
+                  }}
+                >
+                  <span>{message.role === "user" ? "我" : (session?.isGroup ? message.senderName || "TA" : "TA")}</span>
+                  <p>{message.content}</p>
+                </button>
+              ))}
+              {matchingChatMessages.length > messages.length ? (
+                <button
+                  type="button"
+                  className="diary-attachment-load-more"
+                  onClick={() => setChatLimit(value => value + 60)}
+                >
+                  再加载 {Math.min(60, matchingChatMessages.length - messages.length)} 条
+                </button>
+              ) : null}
+            </>
           ) : null}
 
           {tab === "music" ? (
