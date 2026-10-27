@@ -465,7 +465,7 @@ function buildCalendarProactiveIntent(config: CalendarProactiveConfig): string {
             ? "你可以主动发消息分享此刻，也可以选择不发；如果选择不发，只输出空内容。"
             : "请主动发一条消息，分享此刻的感受或正在做的事。",
         "这是主动联系，不是用户发来的消息。请像平时发微信一样自然，只发一条消息，不要连发多条。",
-        "必须遵循当前会话的聊天输出格式；如果当前会话启用了状态区/内心，照常输出，不要省略。",
+        "必须完整遵循当前会话的聊天输出格式：状态区/内心、表情包、语音、图片、音乐、动作等富媒体协议都要照常输出，不要只写纯文字。",
         "不要提及系统提示、日历、行程标题或“主动联系”这件事。",
     ].filter(Boolean).join("\n");
 }
@@ -497,7 +497,10 @@ async function fireCalendarProactive(config: CalendarProactiveConfig) {
             session,
             latestMessages,
             {
-                appTags: ["chat", "text", "calendar_proactive"],
+                // 与普通聊天使用同一组基础标签。之前额外加了 calendar_proactive，
+                // 但该标签会把只声明了 chat/text/media 等标签的预设条目筛掉，
+                // 结果主动消息只剩纯文本。主动联系的差异由 ephemeralSystemNote 承担。
+                appTags: ["chat", "text"],
                 ephemeralSystemNote: buildCalendarProactiveIntent(config),
             },
         );
