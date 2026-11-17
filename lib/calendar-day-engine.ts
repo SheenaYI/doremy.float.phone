@@ -147,7 +147,7 @@ function buildDayReviewInstruction(params: {
     "",
     params.includeChat && params.chatExcerpt
       ? `当天私聊片段（只作为事实参考，不要逐句复述）：\n${params.chatExcerpt}`
-      : "不参考聊天记录。",
+      : "请结合上下文中的短期记忆（跨 App 记录，可能包含聊天）；只取与这一天相关的内容，不要写其他日期的事。",
     params.extraHint.trim() ? `用户额外要求：${params.extraHint.trim()}` : "",
     "",
     "输出规则：",

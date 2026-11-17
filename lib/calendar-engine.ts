@@ -33,6 +33,7 @@ import {
 } from "./calendar-utils";
 import {
   CALENDAR_GENERATION_PRESETS,
+  DEFAULT_CALENDAR_AI_CONFIG,
   buildArcPromptBlock,
   getCalendarRatioLabel,
   loadCalendarAiConfig,
@@ -93,9 +94,20 @@ function buildCalendarTriggerInstruction(
     }
     if (config.customPrompt.trim()) lines.push(`用户额外要求：${config.customPrompt.trim()}`);
   }
+  const perDayMin = Math.max(
+    0,
+    Math.min(12, config?.perDayMin ?? DEFAULT_CALENDAR_AI_CONFIG.perDayMin),
+  );
+  const perDayMax = Math.max(
+    perDayMin,
+    Math.min(12, config?.perDayMax ?? DEFAULT_CALENDAR_AI_CONFIG.perDayMax),
+  );
+  const countRule = perDayMin > 0
+    ? `每天安排 ${perDayMin}–${perDayMax} 条日程；在范围内尽量排满，但不要为了凑数硬塞。`
+    : `每天最多 ${perDayMax} 条日程，宁缺毋滥。`;
   lines.push(
     "每行一条，格式：YYYY-MM-DD|周几|开始时间|结束时间|地点|emoji|事项。emoji 段填一个最贴合该事项的表情符号。",
-    "作息时间不受限制（早起、夜跑、通宵都可以安排），但每一天最多 5 条日程，宁缺毋滥。",
+    `作息时间不受限制（早起、夜跑、通宵都可以安排）；${countRule}`,
   );
   return lines.join("\n");
 }
@@ -170,6 +182,25 @@ function parseScheduleLinesForDates(rawText: string, allowedDates: Set<string>):
 
 function parseScheduleLines(rawText: string, weekStart: string): CalendarScheduleItem[] {
   return parseScheduleLinesForDates(rawText, new Set(getWeekDates(weekStart)));
+}
+
+/**
+ * 按天裁掉超出上限的日程。提示词只是软约束，模型仍可能多给；
+ * 在预览与落库之前统一裁剪，保证「预览看到的」和「保存下来的」一致。
+ * 保留模型给出的先后顺序（通常也是时间顺序），超出的从当天末尾丢弃。
+ */
+function clampScheduleItemsPerDay(items: CalendarScheduleItem[], perDayMax: number): CalendarScheduleItem[] {
+  const limit = Number.isFinite(perDayMax) ? Math.floor(perDayMax) : 0;
+  if (limit <= 0) return items;
+  const counts = new Map<string, number>();
+  const kept: CalendarScheduleItem[] = [];
+  for (const item of items) {
+    const used = counts.get(item.date) ?? 0;
+    if (used >= limit) continue;
+    counts.set(item.date, used + 1);
+    kept.push(item);
+  }
+  return kept;
 }
 
 type CalendarResolveOptions = {
@@ -325,7 +356,8 @@ async function requestCalendarScheduleRange(
       { appId: "calendar", appTags: ["calendar"] },
     );
 
-    const items = parseScheduleLinesForDates(rawText, new Set(dates));
+    const parsedItems = parseScheduleLinesForDates(rawText, new Set(dates));
+    const items = clampScheduleItemsPerDay(parsedItems, aiConfig.perDayMax);
     if (items.length === 0) {
       return { success: false, error: "日历生成结果为空，或格式无法解析。" };
     }

@@ -120,6 +120,18 @@ export function CalendarGeneratePage({
     updateConfig({ ratios: { ...config.ratios, [tagId]: Math.max(0, Math.min(100, value)) } });
   };
 
+  /** 每天条数上下限：任一字段变化时把另一个字段夹到合法关系内，避免 min > max。 */
+  const setPerDayLimit = (field: "perDayMin" | "perDayMax", value: number) => {
+    if (!Number.isFinite(value)) return;
+    if (field === "perDayMin") {
+      const min = Math.max(0, Math.min(12, Math.floor(value)));
+      updateConfig({ perDayMin: min, perDayMax: Math.max(min, config.perDayMax) });
+    } else {
+      const max = Math.max(1, Math.min(12, Math.floor(value)));
+      updateConfig({ perDayMax: max, perDayMin: Math.min(config.perDayMin, max) });
+    }
+  };
+
   const createArc = () => {
     const now = new Date();
     const title = (arcTitleDraft.trim() || config.arcClue.trim().slice(0, 24) || "一个正在酝酿的事件").slice(0, 40);
@@ -221,6 +233,31 @@ export function CalendarGeneratePage({
 
   const todayIso = formatIsoDate(new Date());
 
+  // 预览里按天统计条数，方便核对是否落在用户设定的范围内（超出上限已在生成时截断）。
+  const previewRangeDates = useMemo(() => {
+    const dates: string[] = [];
+    const start = parseIsoDate(scheduleStartDate).getTime();
+    const end = parseIsoDate(scheduleEndDate).getTime();
+    if (Number.isNaN(start) || Number.isNaN(end) || end < start) return dates;
+    for (let cursor = start; cursor <= end && dates.length < 62; cursor += 86_400_000) {
+      dates.push(formatIsoDate(new Date(cursor)));
+    }
+    return dates;
+  }, [scheduleStartDate, scheduleEndDate]);
+  const previewDayCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const item of weeklyPreview ?? []) {
+      counts.set(item.date, (counts.get(item.date) ?? 0) + 1);
+    }
+    return counts;
+  }, [weeklyPreview]);
+  const previewDaysOutsideRange = useMemo(
+    () => previewRangeDates
+      .map(date => [date, previewDayCounts.get(date) ?? 0] as const)
+      .filter(([, count]) => count < config.perDayMin || count > config.perDayMax),
+    [previewRangeDates, previewDayCounts, config.perDayMin, config.perDayMax],
+  );
+
   const generateReviewRange = async () => {
     if (rangeBusy || dayBusy) return;
     const end = reviewEndDate > todayIso ? todayIso : reviewEndDate;
@@ -318,7 +355,7 @@ export function CalendarGeneratePage({
             <span className="calendar-generate-card-icon"><SlidersHorizontal size={17} /></span>
             <div>
               <strong>行程生成设置</strong>
-              <em>{getCalendarRatioLabel(config.ratios)}</em>
+              <em>{getCalendarRatioLabel(config.ratios)}；每天 {config.perDayMin}–{config.perDayMax} 条</em>
             </div>
           </div>
           <div className="calendar-generate-date-row">
@@ -387,6 +424,31 @@ export function CalendarGeneratePage({
                 <em>{value}%</em>
               </label>
             ))}
+          </div>
+          <div className="calendar-generate-date-row">
+            <label>
+              <span>每天最少（条）</span>
+              <input
+                type="number"
+                min={0}
+                max={12}
+                value={config.perDayMin}
+                onChange={event => setPerDayLimit("perDayMin", Number(event.target.value))}
+              />
+            </label>
+            <label>
+              <span>每天最多（条）</span>
+              <input
+                type="number"
+                min={1}
+                max={12}
+                value={config.perDayMax}
+                onChange={event => setPerDayLimit("perDayMax", Number(event.target.value))}
+              />
+            </label>
+          </div>
+          <div className="calendar-generate-field">
+            <span>每天 {config.perDayMin}–{config.perDayMax} 条；模型超出上限的部分会在预览前截断</span>
           </div>
           <div className="calendar-generate-field">
             <span>大事件连续性</span>
@@ -541,7 +603,7 @@ export function CalendarGeneratePage({
           </div>
           <label className="calendar-generate-check">
             <input type="checkbox" checked={includeChat} onChange={event => setIncludeChat(event.target.checked)} />
-            <span>参考当天私聊记录（只取该角色私聊，按日期截断）</span>
+            <span>附加当天私聊原文（40 条，补足旧日期；短期记忆已含聊天）</span>
           </label>
           <textarea
             className="calendar-generate-textarea"
@@ -609,7 +671,14 @@ export function CalendarGeneratePage({
               </button>
             </div>
             <div className="modal-body hide-scrollbar calendar-preview-body">
-              <p className="calendar-preview-hint">勾选要保存的日程；可以直接改标题、时间和地点。手动条目不会被覆盖。</p>
+              <p className="calendar-preview-hint">
+                勾选要保存的日程；可以直接改标题、时间和地点。手动条目不会被覆盖。
+                <br />
+                本次 {weeklyPreview.length} 条 / {previewRangeDates.length} 天；设置：每天 {config.perDayMin}–{config.perDayMax} 条
+                {previewDaysOutsideRange.length > 0
+                  ? `；${previewDaysOutsideRange.length} 天不符合设定（${previewDaysOutsideRange.slice(0, 3).map(([day, count]) => `${day} ${count} 条`).join("、")}${previewDaysOutsideRange.length > 3 ? "…" : ""}）`
+                  : ""}
+              </p>
               {weeklyPreview.map(item => (
                 <div key={item.id} className="calendar-preview-item" data-selected={selectedWeekIds.has(item.id) ? "true" : undefined}>
                   <input

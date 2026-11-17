@@ -15,6 +15,10 @@ export type CalendarAiConfig = {
   arcCycleDays: number;
   arcNature: string;
   arcClue: string;
+  /** 每天最少几条日程（0 = 不设下限） */
+  perDayMin: number;
+  /** 每天最多几条日程（硬上限 12；生成结果超出会被截断） */
+  perDayMax: number;
 };
 
 export type CalendarStoryArc = {
@@ -94,6 +98,8 @@ export const DEFAULT_CALENDAR_AI_CONFIG: CalendarAiConfig = {
   arcCycleDays: 7,
   arcNature: "工作合作 / 感情发展 / 家庭 / 个人目标",
   arcClue: "",
+  perDayMin: 1,
+  perDayMax: 8,
 };
 
 function ownerKey(ownerType: CalendarOwnerType, ownerId: string): string {
@@ -124,6 +130,11 @@ function normalizeConfig(raw: unknown): CalendarAiConfig {
   const preset = ["busy_work", "leisure", "random", "custom"].includes(String(record.preset))
     ? String(record.preset) as CalendarGenerationPreset
     : "random";
+  const perDayMax = clampNumber(record.perDayMax, 1, 12, DEFAULT_CALENDAR_AI_CONFIG.perDayMax);
+  const perDayMin = Math.min(
+    clampNumber(record.perDayMin, 0, 12, DEFAULT_CALENDAR_AI_CONFIG.perDayMin),
+    perDayMax,
+  );
   return {
     ratios: normalizeRatios(record.ratios),
     preset,
@@ -133,6 +144,8 @@ function normalizeConfig(raw: unknown): CalendarAiConfig {
     arcCycleDays: clampNumber(record.arcCycleDays, 1, 90, DEFAULT_CALENDAR_AI_CONFIG.arcCycleDays),
     arcNature: cleanText(record.arcNature, 200) || DEFAULT_CALENDAR_AI_CONFIG.arcNature,
     arcClue: cleanText(record.arcClue, 600),
+    perDayMin,
+    perDayMax,
   };
 }
 
