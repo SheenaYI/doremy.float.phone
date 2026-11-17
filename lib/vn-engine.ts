@@ -29,6 +29,7 @@ import type { ChatMessage } from "./chat-storage";
 import type { VnFrame, VnOptions } from "./vn-types";
 import { simpleLLMCall } from "./api-helpers";
 import { buildVnStatusInstruction, getVnStatusConfig, isVnStatusActive } from "./vn-status-region";
+import { recordPerformanceMetric } from "./performance-diagnostics";
 
 const VN_RAW_HISTORY_LIMIT = 40;
 const VN_RECAP_ROUND_LIMIT = 12;
@@ -145,6 +146,7 @@ async function buildVnPromptMessages(
   worldBooks: WorldBookConfig[],
   chapterIndex?: number
 ): Promise<LLMMessage[]> {
+  const promptBuildStartedAt = typeof performance !== "undefined" ? performance.now() : Date.now();
   const character = loadCharacters().find((c) => c.id === characterId);
   if (!character) {
     throw new ChatEngineError(`Character not found: ${characterId}`);
@@ -165,6 +167,7 @@ async function buildVnPromptMessages(
     "vn",
     { userName: userIdentity?.name ?? "用户", history: historyMessages }
   );
+  const promptContextDoneAt = typeof performance !== "undefined" ? performance.now() : Date.now();
 
   const compact = (text: string, max: number) => {
     const plain = text.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
@@ -226,6 +229,7 @@ async function buildVnPromptMessages(
     retrieveCoreMemoriesForPrompt(characterId, memConfig).catch(() => null),
   ]);
 
+  const promptAssembleStartedAt = typeof performance !== "undefined" ? performance.now() : Date.now();
   const promptMessages = assemblePromptPayload({
     character,
     history: truncatedHistory,
@@ -250,6 +254,16 @@ async function buildVnPromptMessages(
       const { beatsList, currentBeat } = formatBeatsForPrompt(ch);
       return { vnBeats: beatsList, vnCurrentBeat: currentBeat };
     })(),
+  });
+  const promptBuildDoneAt = typeof performance !== "undefined" ? performance.now() : Date.now();
+  recordPerformanceMetric("prompt.vn.build", promptBuildDoneAt - promptBuildStartedAt, {
+    contextMs: Math.round(promptContextDoneAt - promptBuildStartedAt),
+    memoryMs: Math.round(promptAssembleStartedAt - promptContextDoneAt),
+    assembleMs: Math.round(promptBuildDoneAt - promptAssembleStartedAt),
+    historyMessages: truncatedHistory.length,
+    recentItems: unifiedRecentItems.length,
+    recapChars: recap.length,
+    promptMessages: promptMessages.length,
   });
   const statusConfig = getVnStatusConfig(characterId);
   if (isVnStatusActive(statusConfig)) {

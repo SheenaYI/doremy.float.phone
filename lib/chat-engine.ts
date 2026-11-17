@@ -66,6 +66,7 @@ import { fetchLlmPayload } from "./llm-http";
 import { loadMemoryConfig, incrementEventCounter } from "./memory-storage";
 import { retrieveCoreMemoriesForPrompt, retrieveMemoriesForPrompt } from "./memory-service";
 import { formatCoreMemories, formatLongTermMemories } from "./memory-injector";
+import { recordPerformanceMetric } from "./performance-diagnostics";
 import { maybeRunSummarization } from "./memory-summarizer";
 import { prepareShortTermContext } from "./short-term-assembler";
 import { parseActionTags, dispatchActions } from "./action-parser";
@@ -1867,6 +1868,7 @@ export async function buildChatPromptMessages(
     userIdentity: ReturnType<typeof resolveUserIdentity>;
     toolsEnabled: boolean;
 }> {
+    const promptBuildStartedAt = typeof performance !== "undefined" ? performance.now() : Date.now();
     // 设置页可能在聊天室仍挂载时更新会话对象。每次组装提示词都重新读取落库状态，
     // 避免拉黑/解除拉黑刚切换后仍使用进入聊天室时的旧 session 快照。
     session = loadChatSessions().find(item => item.id === session.id) ?? session;
@@ -1951,6 +1953,7 @@ export async function buildChatPromptMessages(
         excludeOfflineSessionId: options?.excludeOfflineSessionId,
         promptTimestampOptions,
     });
+    const promptContextDoneAt = typeof performance !== "undefined" ? performance.now() : Date.now();
     const promptHistory = applyVisionImagePromptLimit(
         truncatedHistory.map(msg => ({ ...msg })),
         resolveVisionImagePromptLimit(session),
@@ -2000,6 +2003,7 @@ export async function buildChatPromptMessages(
         )
         : "";
 
+    const promptAssembleStartedAt = typeof performance !== "undefined" ? performance.now() : Date.now();
     const llmMessages = assemblePromptPayload({
         character,
         history: promptHistory,
@@ -2042,6 +2046,18 @@ export async function buildChatPromptMessages(
         offlineBilingualInstruction,
         offlineSummaryTag: preset?.story_summary_tag?.trim() || "summary",
         nativeToolHistory: usesNativeActions,
+    });
+    const promptBuildDoneAt = typeof performance !== "undefined" ? performance.now() : Date.now();
+    recordPerformanceMetric("prompt.chat.build", promptBuildDoneAt - promptBuildStartedAt, {
+        appId: resolvedAppId,
+        contextMs: Math.round(promptContextDoneAt - promptBuildStartedAt),
+        memoryMs: Math.round(promptAssembleStartedAt - promptContextDoneAt),
+        assembleMs: Math.round(promptBuildDoneAt - promptAssembleStartedAt),
+        historyMessages: promptHistory.length,
+        recentItems: unifiedRecentItems.length,
+        longTermChars: longTermMemories.length,
+        coreChars: coreMemories.length,
+        promptMessages: llmMessages.length,
     });
     // Tool-use policy: keep the model proactive for real app actions without forcing tools on ordinary conversation.
     if (toolsEnabled) {
