@@ -51,6 +51,10 @@ export function ApiSettings() {
     // 用它把「需要定价的模型」直接摆出来，用户不必手打模型名——定价入口最容易死在
     // 「用户不知道该填哪个模型名」上，而账本已经知道答案。
     const [usedModels, setUsedModels] = useState<Record<string, string[]>>({});
+    // 计费区默认只铺「当前模型 + 已计价的历史模型」；未计价的历史模型收进二级入口，
+    // 避免换一次默认模型就多出一行空价格。
+    const [openPriceHistory, setOpenPriceHistory] = useState<Record<string, boolean>>({});
+    const [showUnpricedModels, setShowUnpricedModels] = useState<Record<string, boolean>>({});
 
     useEffect(() => {
         let cancelled = false;
@@ -137,6 +141,85 @@ export function ApiSettings() {
         }
         persist(configs.map(c => c.id === id ? { ...c, modelPrices: table } : c));
     }, [configs, persist]);
+
+    /** 清除单个模型的计价（含只剩 mode 的空壳条目）。 */
+    const clearModelPrice = useCallback((id: string, model: string) => {
+        const config = configs.find(c => c.id === id);
+        if (!config?.modelPrices?.[model]) return;
+        const table = { ...config.modelPrices };
+        delete table[model];
+        persist(configs.map(c => c.id === id ? { ...c, modelPrices: table } : c));
+    }, [configs, persist]);
+
+    /** 单行计费编辑 UI：当前模型和历史模型共用，避免两套渲染逻辑漂移。 */
+    const renderModelPriceRow = (config: ApiConfig, model: string) => {
+        const price = config.modelPrices?.[model];
+        const mode = price?.mode ?? "per_token";
+        return (
+            <div key={model} className="flex flex-wrap items-center gap-2">
+                <span
+                    className="ts-12 flex-1 truncate"
+                    style={{ color: "var(--c-text)", minWidth: 80 }}
+                    title={model}
+                >
+                    {model}
+                </span>
+                <select
+                    className="ui-select shrink-0"
+                    style={{ width: 78 }}
+                    value={mode}
+                    onChange={(e) => updateModelPrice(config.id, model, "mode", e.target.value)}
+                >
+                    <option value="per_token">按 token</option>
+                    <option value="per_call">按次</option>
+                </select>
+                {mode === "per_call" ? (
+                    <Input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        className="w-[86px]"
+                        value={price?.perCall ?? ""}
+                        onChange={(e) => updateModelPrice(config.id, model, "perCall", e.target.value)}
+                        placeholder="元/次"
+                    />
+                ) : (
+                    <>
+                        <Input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            className="w-[78px]"
+                            value={price?.input ?? ""}
+                            onChange={(e) => updateModelPrice(config.id, model, "input", e.target.value)}
+                            placeholder="输入"
+                        />
+                        <Input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            className="w-[78px]"
+                            value={price?.output ?? ""}
+                            onChange={(e) => updateModelPrice(config.id, model, "output", e.target.value)}
+                            placeholder="输出"
+                        />
+                    </>
+                )}
+                {price ? (
+                    <button
+                        type="button"
+                        className="ui-link-btn shrink-0"
+                        data-variant="danger"
+                        title="清除该模型计价"
+                        aria-label={`清除 ${model} 的计价`}
+                        onClick={() => clearModelPrice(config.id, model)}
+                    >
+                        <X size={14} />
+                    </button>
+                ) : null}
+            </div>
+        );
+    };
 
     useEffect(() => {
         setSubpageRightAction("api",
@@ -446,14 +529,33 @@ export function ApiSettings() {
 
                                         {/* 模型单价：只用于「用量统计」里的花费估算，不影响调用本身。
                                             刻意不做成内置价格表——各家定价会变，内置一张表迟早是错的。
-                                            这里只列出账本里实际用过的模型 + 当前默认模型，用户按自己
-                                            实际付费的价格填；不填的模型在统计里显示「未计价」。 */}
+                                            默认只显示当前模型 + 已计价的历史模型：换默认模型不会再多出一行
+                                            空价格；未计价的旧模型收进「查看未计价的历史模型」入口。
+                                            历史价格不自动迁移（同名才算同一模型），但可以随时清除。 */}
                                         {(() => {
-                                            const models = Array.from(new Set([
-                                                ...(usedModels[config.id] ?? []),
-                                                ...(config.defaultModel ? [config.defaultModel] : []),
-                                            ])).sort();
-                                            if (models.length === 0) return null;
+                                            // 不做 trim：模型名是账本/计价表的精确 key，带空格的模型也要能对上；
+                                            // 只有「是否为空」用 trim 判断。
+                                            const currentModel = config.defaultModel ?? "";
+                                            const ledgerModels = usedModels[config.id] ?? [];
+                                            // 「已计价」只认真正填了数字的条目；只剩 mode 的空壳按未计价处理，
+                                            // 否则它会顶着「已计价」的标题继续占一行。
+                                            const hasPriceValue = (price: ModelPriceConfig | undefined): boolean => Boolean(
+                                                price
+                                                && (price.input !== undefined || price.output !== undefined || price.perCall !== undefined),
+                                            );
+                                            const historicalModels = Array.from(new Set([
+                                                ...Object.keys(config.modelPrices ?? {}),
+                                                ...ledgerModels,
+                                            ])).filter(model => model && model !== currentModel);
+                                            const historicalPriced = historicalModels
+                                                .filter(model => hasPriceValue(config.modelPrices?.[model]))
+                                                .sort();
+                                            const unpricedModels = historicalModels
+                                                .filter(model => !hasPriceValue(config.modelPrices?.[model]))
+                                                .sort();
+                                            const historyOpen = openPriceHistory[config.id] === true;
+                                            const unpricedOpen = showUnpricedModels[config.id] === true;
+                                            if (!currentModel.trim() && historicalPriced.length === 0 && unpricedModels.length === 0) return null;
                                             return (
                                                 <div className="flex flex-col gap-2">
                                                     <label className="menu-desc ml-1">
@@ -462,65 +564,35 @@ export function ApiSettings() {
                                                             仅用于用量统计的花费估算；按次套餐的站点请选「按次」
                                                         </span>
                                                     </label>
-                                                    {models.map(model => {
-                                                        const price = config.modelPrices?.[model];
-                                                        const mode = price?.mode ?? "per_token";
-                                                        return (
-                                                            <div key={model} className="flex flex-wrap items-center gap-2">
-                                                                <span
-                                                                    className="ts-12 flex-1 truncate"
-                                                                    style={{ color: "var(--c-text)", minWidth: 80 }}
-                                                                    title={model}
-                                                                >
-                                                                    {model}
-                                                                </span>
-                                                                <select
-                                                                    className="ui-select shrink-0"
-                                                                    style={{ width: 78 }}
-                                                                    value={mode}
-                                                                    onChange={(e) => updateModelPrice(config.id, model, "mode", e.target.value)}
-                                                                >
-                                                                    <option value="per_token">按 token</option>
-                                                                    <option value="per_call">按次</option>
-                                                                </select>
-                                                                {mode === "per_call" ? (
-                                                                    <Input
-                                                                        type="number"
-                                                                        min="0"
-                                                                        step="0.01"
-                                                                        className="w-[86px]"
-                                                                        value={price?.perCall ?? ""}
-                                                                        onChange={(e) => updateModelPrice(config.id, model, "perCall", e.target.value)}
-                                                                        placeholder="元/次"
-                                                                    />
-                                                                ) : (
-                                                                    <>
-                                                                        <Input
-                                                                            type="number"
-                                                                            min="0"
-                                                                            step="0.01"
-                                                                            className="w-[78px]"
-                                                                            value={price?.input ?? ""}
-                                                                            onChange={(e) => updateModelPrice(config.id, model, "input", e.target.value)}
-                                                                            placeholder="输入"
-                                                                        />
-                                                                        <Input
-                                                                            type="number"
-                                                                            min="0"
-                                                                            step="0.01"
-                                                                            className="w-[78px]"
-                                                                            value={price?.output ?? ""}
-                                                                            onChange={(e) => updateModelPrice(config.id, model, "output", e.target.value)}
-                                                                            placeholder="输出"
-                                                                        />
-                                                                    </>
-                                                                )}
-                                                            </div>
-                                                        );
-                                                    })}
+                                                    {currentModel.trim() ? renderModelPriceRow(config, currentModel) : null}
+                                                    {historicalPriced.length > 0 ? (
+                                                        <div className="flex flex-col gap-2">
+                                                            <button
+                                                                type="button"
+                                                                className="ui-link-btn"
+                                                                onClick={() => setOpenPriceHistory(prev => ({ ...prev, [config.id]: !historyOpen }))}
+                                                            >
+                                                                {historyOpen ? "收起" : "展开"}历史模型（已计价）· {historicalPriced.length}
+                                                            </button>
+                                                            {historyOpen ? historicalPriced.map(model => renderModelPriceRow(config, model)) : null}
+                                                        </div>
+                                                    ) : null}
+                                                    {unpricedModels.length > 0 ? (
+                                                        <div className="flex flex-col gap-2">
+                                                            <button
+                                                                type="button"
+                                                                className="ui-link-btn"
+                                                                onClick={() => setShowUnpricedModels(prev => ({ ...prev, [config.id]: !unpricedOpen }))}
+                                                            >
+                                                                {unpricedOpen ? "收起" : `查看未计价的历史模型（${unpricedModels.length}）`}
+                                                            </button>
+                                                            {unpricedOpen ? unpricedModels.map(model => renderModelPriceRow(config, model)) : null}
+                                                        </div>
+                                                    ) : null}
                                                     <div className="ts-12" style={{ color: "#888" }}>
                                                         按 token 填「元 / 百万 token」；按次填「元 / 次」。
                                                         两种计费的金额在统计里分开显示，不相加。
+                                                        改默认模型不会删除旧价格；未计价的旧模型默认收起。
                                                     </div>
                                                 </div>
                                             );
