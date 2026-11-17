@@ -3,7 +3,7 @@
 // a unified timeline. Replaces the old ShortTermEvent IndexedDB approach.
 // Used by: memory-bank-page (UI display), memory-summarizer (summarization input).
 
-import { getSystemInstructionPromptContent, isReadingDiscussMessage, isSystemInstructionMessage, loadChatSessions, loadChatMessages, type ChatMessage } from "./chat-storage";
+import { getSystemInstructionPromptContent, isReadingDiscussMessage, isSystemInstructionMessage, loadChatSessions, loadAllChatMessages, compareChatMessages, type ChatMessage } from "./chat-storage";
 import { buildGroupAdminBracketText } from "./group-admin";
 import { loadMomentPosts, loadMomentComments } from "./moments-storage";
 import { loadCharacters } from "./character-storage";
@@ -202,9 +202,24 @@ export function loadNativeTimeline(
     const session = sessions.find(s => !s.isGroup && s.contactId === characterId);
     const groupSessions = sessions.filter(s => s.isGroup && s.participantIds?.includes(characterId));
 
+    // 每个会话都调 loadChatMessages 会把「全库消息」过滤一遍再排序，群聊一多就是
+    // O(会话数 × 总消息数)。这里只扫一遍全库、按本次真正用到的会话分桶，再各自排序。
+    const targetSessionIds = new Set<string>();
+    if (session) targetSessionIds.add(session.id);
+    for (const gs of groupSessions) targetSessionIds.add(gs.id);
+    const messagesBySession = new Map<string, ChatMessage[]>();
+    for (const msg of loadAllChatMessages()) {
+        if (!targetSessionIds.has(msg.sessionId)) continue;
+        const bucket = messagesBySession.get(msg.sessionId);
+        if (bucket) bucket.push(msg);
+        else messagesBySession.set(msg.sessionId, [msg]);
+    }
+    for (const bucket of messagesBySession.values()) bucket.sort(compareChatMessages);
+    const messagesOf = (sessionId: string): ChatMessage[] => messagesBySession.get(sessionId) ?? [];
+
     // Process group sessions
     for (const gs of groupSessions) {
-        const messages = loadChatMessages(gs.id);
+        const messages = messagesOf(gs.id);
         for (const msg of messages) {
             if (msg.isRetracted) continue;
             if (isPromptHiddenChatMessage(msg)) continue;
@@ -294,7 +309,7 @@ export function loadNativeTimeline(
     }
 
     if (session) {
-        const messages = loadChatMessages(session.id);
+        const messages = messagesOf(session.id);
         for (const msg of messages) {
             if (msg.isRetracted) continue;
             if (isPromptHiddenChatMessage(msg)) continue;
@@ -828,8 +843,16 @@ export function loadNativeTimeline(
     }
 
     // Sort by timestamp ascending
-    entries.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+    entries.sort((a, b) => compareTimelineTimestamps(a.timestamp, b.timestamp));
     return entries;
+}
+
+/** 时间线里的时间戳都是 ISO 字符串，字典序即时间序。
+ *  localeCompare 在大数组上要按语言规则逐字比较，明显慢于直接比较；
+ *  这里每次生成都要排几千条短期记忆，换成直接比较可以少一次主线程卡顿。 */
+function compareTimelineTimestamps(a: string, b: string): number {
+    if (a === b) return 0;
+    return a < b ? -1 : 1;
 }
 
 // Fixed order — lower = further from LLM output (appears higher in prompt)
@@ -1150,7 +1173,7 @@ export function prepareShortTermContext(
         pool.push({ kind: "history", timestamp: history[i].createdAt, tokens: estimateTokens(history[i].content) + 4, msgIdx: i });
     }
 
-    pool.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+    pool.sort((a, b) => compareTimelineTimestamps(a.timestamp, b.timestamp));
 
     // Truncate from oldest until within budget
     let total = pool.reduce((sum, p) => sum + p.tokens, 0);
@@ -1265,11 +1288,11 @@ export function prepareGroupShortTermContext(
         }
     }
 
-    const timeline = [...timelineByKey.values()].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+    const timeline = [...timelineByKey.values()].sort((a, b) => compareTimelineTimestamps(a.timestamp, b.timestamp));
     const activationPool = [
         ...timeline.map(entry => ({ timestamp: entry.timestamp, content: entry.content })),
         ...history.filter(msg => msg.mediaType !== "tool_notice").map(msg => ({ timestamp: msg.createdAt, content: msg.content })),
-    ].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+    ].sort((a, b) => compareTimelineTimestamps(a.timestamp, b.timestamp));
     const wbActivationContext = activationPool.slice(-10).map(item => item.content).join("\n");
 
     const budget = memConfig.shortTermTokenBudget;
@@ -1398,7 +1421,7 @@ export function prepareGroupShortTermContext(
         });
     }
 
-    pool.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+    pool.sort((a, b) => compareTimelineTimestamps(a.timestamp, b.timestamp));
 
     let total = pool.reduce((sum, item) => sum + item.tokens, 0);
     let startIdx = 0;

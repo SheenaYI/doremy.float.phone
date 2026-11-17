@@ -1329,6 +1329,34 @@
   color: #4d463a;
   white-space: pre-wrap;
 }
+.vnc-ticket-flags {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.vnc-ticket-flags label {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  cursor: pointer;
+  font-size: 11px;
+  line-height: 1.45;
+  color: #3e382e;
+}
+.vnc-ticket-flags input {
+  width: 14px;
+  height: 14px;
+  margin: 1px 0 0;
+  accent-color: #b63d35;
+  flex: none;
+}
+.vnc-ticket-flags em {
+  display: block;
+  margin-top: 1px;
+  font: 8.5px/1.4 "Helvetica Neue", Arial, sans-serif;
+  font-style: normal;
+  color: #9b8e7b;
+}
 .vnc-ticket-chapters {
   display: flex;
   flex-direction: column;

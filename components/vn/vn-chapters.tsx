@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, Plus, BookOpen, Trash2, RotateCcw, Layers3, X } from "lucide-react";
+import { ArrowLeft, Plus, BookOpen, Trash2, RotateCcw, Layers3, X, Eye, EyeOff } from "lucide-react";
 import { loadCharacters } from "@/lib/character-storage";
 import {
   createOrGetVnSession,
@@ -10,6 +10,8 @@ import {
   startNewChapter,
   archiveChapter,
   updateChapterSummary,
+  updateChapterSummaryFlags,
+  updateVnVolume,
   clearChapterSummary,
   loadVnMessagesForChapter,
   listOrphanVnMessageGroups,
@@ -45,6 +47,7 @@ export function VnChapters({ characterId, onClose, onSelect, vnTheme }: VnChapte
   const [restoreError, setRestoreError] = useState<string | null>(null);
   const [summarizeTarget, setSummarizeTarget] = useState<number | null>(null);
   const [summarizeInMemory, setSummarizeInMemory] = useState(true);
+  const [summarizeInPrompt, setSummarizeInPrompt] = useState(true);
   const [summarizeError, setSummarizeError] = useState("");
   const [visibleStart, setVisibleStart] = useState<number | null>(null);
   const [selectMode, setSelectMode] = useState(false);
@@ -53,6 +56,7 @@ export function VnChapters({ characterId, onClose, onSelect, vnTheme }: VnChapte
   const [volumeTitle, setVolumeTitle] = useState("");
   const [volumeDeleteMessages, setVolumeDeleteMessages] = useState(false);
   const [volumeInMemory, setVolumeInMemory] = useState(true);
+  const [volumeInPrompt, setVolumeInPrompt] = useState(true);
   const [volumeError, setVolumeError] = useState("");
   const [volumeTicket, setVolumeTicket] = useState<VnVolume | null>(null);
   const [archivePromptIndex, setArchivePromptIndex] = useState<number | null>(null);
@@ -119,14 +123,14 @@ export function VnChapters({ characterId, onClose, onSelect, vnTheme }: VnChapte
     onSelect(index);
   }, [canCreateNewChapter, chapters.length, session.id, onSelect]);
 
-  const handleSummarize = useCallback(async (chapterIndex: number, inMemory: boolean) => {
+  const handleSummarize = useCallback(async (chapterIndex: number, inMemory: boolean, inPrompt: boolean) => {
     setSummarizing(chapterIndex);
     setSummarizeError("");
     try {
       const messages = loadVnMessagesForChapter(session.id, chapterIndex);
       if (messages.length === 0) return;
       const summary = await summarizeVnChapter(characterId, messages);
-      updateChapterSummary(session.id, chapterIndex, summary, { inMemory });
+      updateChapterSummary(session.id, chapterIndex, summary, { inMemory, inPrompt });
       forceUpdate((n) => n + 1);
       setSummarizeTarget(null);
     } catch (err) {
@@ -223,6 +227,7 @@ export function VnChapters({ characterId, onClose, onSelect, vnTheme }: VnChapte
     setVolumeTitle(`旧章合册 · ${first.title}${first.id !== last.id ? ` 至 ${last.title}` : ""}`);
     setVolumeDeleteMessages(false);
     setVolumeInMemory(true);
+    setVolumeInPrompt(true);
     setVolumeError("");
     setVolumeDraftOpen(true);
   };
@@ -246,7 +251,12 @@ export function VnChapters({ characterId, onClose, onSelect, vnTheme }: VnChapte
           const messages = loadVnMessagesForChapter(liveSession.id, fresh.index);
           if (messages.length === 0) throw new Error(`「${fresh.title}」没有可总结的消息，无法合册`);
           const summary = await summarizeVnChapter(characterId, messages);
-          updateChapterSummary(liveSession.id, fresh.index, summary, { inMemory: volumeInMemory });
+          updateChapterSummary(liveSession.id, fresh.index, summary, {
+            inMemory: volumeInMemory,
+            // 合册章节的逐章摘要默认不再单独进提示词，由合册摘要统一代表；
+            // 若合册摘要也不进提示词，则这批旧章节完全不占上下文。
+            inPrompt: false,
+          });
         }
       }
       const current = createOrGetVnSession(characterId);
@@ -265,6 +275,7 @@ export function VnChapters({ characterId, onClose, onSelect, vnTheme }: VnChapte
         summary,
         deleteMessages: volumeDeleteMessages,
         summaryInMemory: volumeInMemory,
+        summaryInPrompt: volumeInPrompt,
       });
       if (!volume) throw new Error("合册失败：章节状态已变化，请重试");
       setVolumeDraftOpen(false);
@@ -740,7 +751,10 @@ export function VnChapters({ characterId, onClose, onSelect, vnTheme }: VnChapte
                   </span>
                   <span className="vnc-volume-kicker">合册 · {item.chapters.length} 章</span>
                   <b>{item.volume.title}</b>
-                  <em>{item.volume.messagesCleared ? "仅保留摘要" : "旧章归档"}</em>
+                  <em>
+                    {item.volume.messagesCleared ? "仅保留摘要" : "旧章归档"}
+                    {item.volume.summaryInPrompt === false ? " · 不进提示词" : ""}
+                  </em>
                 </button>
               );
             }
@@ -779,12 +793,29 @@ export function VnChapters({ characterId, onClose, onSelect, vnTheme }: VnChapte
                   {ch.subtitle && <div className="vnc-chapter-sub">{ch.subtitle}</div>}
                   {ch.summaryContent && (
                     <div className="vnc-summary-badge">
-                      {ch.summaryInMemory === false ? "仅上下文" : "已生成记忆"}
+                      {ch.summaryInMemory === false ? "不写记忆" : "已写记忆"}
+                      {ch.volumeId
+                        ? " · 由合册代表"
+                        : ch.summaryInPrompt === false ? " · 不进提示词" : " · 进提示词"}
                     </div>
                   )}
                 </div>
                 {!selectMode && ch.summaryContent && (
                   <div className="vnc-actions" onClick={(e) => e.stopPropagation()}>
+                    {!ch.volumeId && (
+                      <button
+                        className="vnc-action-btn"
+                        title={ch.summaryInPrompt === false ? "把本章摘要加入漫卷提示词" : "本章摘要不再进入漫卷提示词"}
+                        onClick={() => {
+                          updateChapterSummaryFlags(session.id, item.index, {
+                            inPrompt: ch.summaryInPrompt === false,
+                          });
+                          forceUpdate((n) => n + 1);
+                        }}
+                      >
+                        {ch.summaryInPrompt === false ? <EyeOff size={12} /> : <Eye size={12} />}
+                      </button>
+                    )}
                     <button
                       className="vnc-action-btn"
                       title="清除本章记忆"
@@ -803,6 +834,7 @@ export function VnChapters({ characterId, onClose, onSelect, vnTheme }: VnChapte
                       onClick={() => {
                         setSummarizeTarget(item.index);
                         setSummarizeInMemory(chapters[item.index]?.summaryInMemory !== false);
+                        setSummarizeInPrompt(chapters[item.index]?.summaryInPrompt !== false);
                         setSummarizeError("");
                       }}
                     >
@@ -914,6 +946,14 @@ export function VnChapters({ characterId, onClose, onSelect, vnTheme }: VnChapte
             <label className="vnc-volume-check">
               <input
                 type="checkbox"
+                checked={volumeInPrompt}
+                onChange={(event) => setVolumeInPrompt(event.target.checked)}
+              />
+              <span>合册摘要进入漫卷提示词<em>关闭后这段旧剧情不再进入 VN 上下文</em></span>
+            </label>
+            <label className="vnc-volume-check">
+              <input
+                type="checkbox"
                 checked={volumeInMemory}
                 onChange={(event) => setVolumeInMemory(event.target.checked)}
               />
@@ -944,6 +984,11 @@ export function VnChapters({ characterId, onClose, onSelect, vnTheme }: VnChapte
           volume={volumeTicket}
           chapters={chapters.filter(chapter => volumeTicket.chapterIds.includes(chapter.id))}
           onClose={() => setVolumeTicket(null)}
+          onToggle={(patch) => {
+            updateVnVolume(liveSession.id, volumeTicket.id, patch);
+            setVolumeTicket(prev => (prev ? { ...prev, ...patch } : prev));
+            forceUpdate(n => n + 1);
+          }}
         />
       ) : null}
 
@@ -968,6 +1013,20 @@ export function VnChapters({ characterId, onClose, onSelect, vnTheme }: VnChapte
                   </span>
                 </span>
               </label>
+              <label style={{ display: "flex", alignItems: "flex-start", gap: 8, margin: "10px 0", cursor: "pointer" }}>
+                <input
+                  type="checkbox"
+                  checked={summarizeInPrompt}
+                  onChange={(event) => setSummarizeInPrompt(event.target.checked)}
+                  style={{ marginTop: 2, width: 15, height: 15, accentColor: "var(--vn-accent, #d8b36a)" }}
+                />
+                <span style={{ fontSize: 12, lineHeight: 1.5 }}>
+                  将章节总结加入漫卷提示词
+                  <span style={{ display: "block", fontSize: 10, opacity: 0.55 }}>
+                    关闭后摘要只留档，不进入 VN 剧情上下文
+                  </span>
+                </span>
+              </label>
               {summarizeError ? (
                 <div style={{ margin: "8px 0", color: "#e59b8a", fontSize: 11, lineHeight: 1.5 }}>{summarizeError}</div>
               ) : null}
@@ -976,7 +1035,7 @@ export function VnChapters({ characterId, onClose, onSelect, vnTheme }: VnChapte
                 <button
                   className="vnc-confirm-btn"
                   disabled={summarizing !== null}
-                  onClick={() => summarizeTarget !== null && void handleSummarize(summarizeTarget, summarizeInMemory)}
+                  onClick={() => summarizeTarget !== null && void handleSummarize(summarizeTarget, summarizeInMemory, summarizeInPrompt)}
                 >
                   {summarizing !== null ? "生成中…" : "生成"}
                 </button>

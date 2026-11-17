@@ -172,7 +172,8 @@ async function buildVnPromptMessages(
   };
   const volumeChapterIds = new Set((vnSession.volumes ?? []).flatMap((volume) => volume.chapterIds));
   const volumeRecaps = (vnSession.volumes ?? [])
-    .filter((volume) => volume.summary.trim())
+    // summaryInPrompt === false：用户在漫卷里关掉了「进入提示词」，该合册摘要不注入上下文。
+    .filter((volume) => volume.summary.trim() && volume.summaryInPrompt !== false)
     .map((volume) => {
       const indexes = vnSession.chapters
         .filter((chapter) => volume.chapterIds.includes(chapter.id))
@@ -184,10 +185,11 @@ async function buildVnPromptMessages(
     ...volumeRecaps,
     ...vnSession.chapters
       .slice(0, activeChapterIndex)
-      .filter((chapter) => !volumeChapterIds.has(chapter.id))
-      .map((chapter, index) => {
+      // 合册内的章节由合册摘要代表；summaryInPrompt === false 的单章摘要同样跳过。
+      .filter((chapter) => !volumeChapterIds.has(chapter.id) && chapter.summaryInPrompt !== false)
+      .map((chapter) => {
         const summary = chapter.summaryContent?.trim();
-        return summary ? `第${index + 1}章《${chapter.title}》：${compact(summary, 500)}` : "";
+        return summary ? `第${chapter.index + 1}章《${chapter.title}》：${compact(summary, 500)}` : "";
       })
       .filter(Boolean),
   ];

@@ -112,6 +112,7 @@ export function VnPlayer({ characterId, chapterIndex, onClose, onChapterEnd, vnT
   const [showArchiveConfirm, setShowArchiveConfirm] = useState(false);
   const [isArchiving, setIsArchiving] = useState(false);
   const [writeChapterSummaryToMemory, setWriteChapterSummaryToMemory] = useState(true);
+  const [writeChapterSummaryToPrompt, setWriteChapterSummaryToPrompt] = useState(true);
   const [statusConfig, setStatusConfig] = useState<VnStatusConfig>(() => getVnStatusConfig(characterId));
   const [statusSettingsOpen, setStatusSettingsOpen] = useState(false);
   const [statusVisible, setStatusVisible] = useState(true);
@@ -1152,7 +1153,7 @@ export function VnPlayer({ characterId, chapterIndex, onClose, onChapterEnd, vnT
             <Clock size={18} />
           </button>
           {!isArchived && (
-            <button className="vn-topbar-btn" onClick={() => { setWriteChapterSummaryToMemory(true); setShowArchiveConfirm(true); }} title="归档章节">
+            <button className="vn-topbar-btn" onClick={() => { setWriteChapterSummaryToMemory(true); setWriteChapterSummaryToPrompt(true); setShowArchiveConfirm(true); }} title="归档章节">
               <Archive size={18} />
             </button>
           )}
@@ -1532,6 +1533,22 @@ export function VnPlayer({ characterId, chapterIndex, onClose, onChapterEnd, vnT
             </label>
           )}
           {!isArchiving && (
+            <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10, color: "rgba(255,255,255,0.78)", fontSize: 12, cursor: "pointer" }}>
+              <input
+                type="checkbox"
+                checked={writeChapterSummaryToPrompt}
+                onChange={(event) => setWriteChapterSummaryToPrompt(event.target.checked)}
+                style={{ accentColor: "#d8b36a", width: 15, height: 15 }}
+              />
+              <span>
+                将章节总结加入漫卷提示词
+                <span style={{ display: "block", marginTop: 2, opacity: 0.55, fontSize: 10 }}>
+                  关闭后摘要只留档，不进入后续 VN 上下文
+                </span>
+              </span>
+            </label>
+          )}
+          {!isArchiving && (
             <div style={{ display: "flex", gap: 16, marginTop: 16 }}>
               <button className="vn-end-btn" onClick={() => setShowArchiveConfirm(false)}>
                 返回
@@ -1548,7 +1565,10 @@ export function VnPlayer({ characterId, chapterIndex, onClose, onChapterEnd, vnT
                     try {
                       if (chapterMessages.length === 0) return;
                       const summary = await summarizeVnChapter(characterId, chapterMessages);
-                      updateChapterSummary(session.id, chapterIndex, summary, { inMemory: writeChapterSummaryToMemory });
+                      updateChapterSummary(session.id, chapterIndex, summary, {
+                        inMemory: writeChapterSummaryToMemory,
+                        inPrompt: writeChapterSummaryToPrompt,
+                      });
                     } catch (err) {
                       // 总结失败不影响归档；章节页的书本按钮仍可手动补总结
                       console.warn("[VN] Auto chapter summarization failed:", err);

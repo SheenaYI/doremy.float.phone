@@ -419,6 +419,8 @@ export type CreateVnVolumeInput = {
   summary: string;
   deleteMessages?: boolean;
   summaryInMemory?: boolean;
+  /** false = 合册摘要不进入 VN 提示词；默认 true。 */
+  summaryInPrompt?: boolean;
 };
 
 /** 把若干已归档章节合成一册。可只归档，也可同时清理这些章的正文消息。 */
@@ -437,6 +439,7 @@ export function createVnVolume(sessionId: string, input: CreateVnVolumeInput): V
     summary: input.summary.trim(),
     createdAt: new Date().toISOString(),
     summaryInMemory: input.summaryInMemory !== false,
+    summaryInPrompt: input.summaryInPrompt !== false,
     messagesCleared: input.deleteMessages === true,
   };
 
@@ -475,11 +478,50 @@ export function loadVnVolumes(sessionId: string): VnVolume[] {
   return session?.volumes ? [...session.volumes] : [];
 }
 
+export type VnVolumeFlags = Pick<VnVolume, "summaryInMemory" | "summaryInPrompt">;
+
+/** 修改已有合册的摘要去向（写记忆 / 进提示词），不影响章节与正文。 */
+export function updateVnVolume(
+  sessionId: string,
+  volumeId: string,
+  patch: Partial<VnVolumeFlags>
+): void {
+  const session = _sessionsCache.find((s) => s.id === sessionId);
+  if (!session) return;
+
+  const volumes = (session.volumes ?? []).map((volume) => (
+    volume.id === volumeId ? { ...volume, ...patch } : volume
+  ));
+  updateVnSession(sessionId, { volumes });
+}
+
+/** 修改已生成章节总结的去向（写记忆 / 进提示词），不重新生成总结。 */
+export function updateChapterSummaryFlags(
+  sessionId: string,
+  chapterIndex: number,
+  patch: { inMemory?: boolean; inPrompt?: boolean }
+): void {
+  const session = _sessionsCache.find((s) => s.id === sessionId);
+  if (!session) return;
+
+  const chapters = [...session.chapters];
+  const ch = chapters[chapterIndex];
+  if (!ch) return;
+
+  chapters[chapterIndex] = {
+    ...ch,
+    ...(patch.inMemory !== undefined ? { summaryInMemory: patch.inMemory } : {}),
+    ...(patch.inPrompt !== undefined ? { summaryInPrompt: patch.inPrompt } : {}),
+  };
+
+  updateVnSession(sessionId, { chapters });
+}
+
 export function updateChapterSummary(
   sessionId: string,
   chapterIndex: number,
   summary: string,
-  options?: { inMemory?: boolean }
+  options?: { inMemory?: boolean; inPrompt?: boolean }
 ): void {
   const session = _sessionsCache.find((s) => s.id === sessionId);
   if (!session) return;
@@ -493,6 +535,7 @@ export function updateChapterSummary(
     summaryContent: summary,
     summaryTimestamp: new Date().toISOString(),
     ...(options?.inMemory !== undefined ? { summaryInMemory: options.inMemory } : {}),
+    ...(options?.inPrompt !== undefined ? { summaryInPrompt: options.inPrompt } : {}),
   };
 
   updateVnSession(sessionId, { chapters });
@@ -511,7 +554,7 @@ export function clearChapterSummary(
   const ch = chapters[chapterIndex];
   if (!ch) return;
 
-  const { summaryContent: _summaryContent, summaryTimestamp: _summaryTimestamp, summaryInMemory: _summaryInMemory, ...rest } = ch;
+  const { summaryContent: _summaryContent, summaryTimestamp: _summaryTimestamp, summaryInMemory: _summaryInMemory, summaryInPrompt: _summaryInPrompt, ...rest } = ch;
   chapters[chapterIndex] = rest;
 
   updateVnSession(sessionId, { chapters });

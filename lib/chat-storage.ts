@@ -1444,6 +1444,11 @@ export function loadChatMessages(sessionId: string, limit?: number): ChatMessage
     return all;
 }
 
+/** 一次拿到全库消息（缓存引用，勿原地修改）。供跨会话批量处理避免「每个会话全表过滤」。 */
+export function loadAllChatMessages(): ChatMessage[] {
+    return _loadAllMessages();
+}
+
 function createMessageId(): string {
     return `msg_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 }
