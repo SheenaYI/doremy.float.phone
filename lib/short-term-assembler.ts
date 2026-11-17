@@ -11,6 +11,7 @@ import { resolveUserIdentity } from "./settings-storage";
 import { loadMemoryConfig } from "./memory-storage";
 import type { MemoryConfig } from "./memory-types";
 import { estimateTokens } from "./token-counter";
+import { recordPerformanceMetric } from "./performance-diagnostics";
 import { loadStoryProjectionEntries } from "./story-storage";
 import { buildTwoLevelMomentThreads } from "./moments-comment-threading";
 import { loadVnProjectionEntries } from "./vn-storage";
@@ -181,6 +182,52 @@ function formatDiaryEntryForTimeline(entry: DiaryEntry, timeAware: boolean, time
  * @param characterId - The character to load data for
  * @param options.afterTimestamp - Only include entries after this ISO timestamp
  */
+/**
+ * 预算感知的尾部裁剪：只保留最近大约 budget token 的 messages。
+ *
+ * 最终装配会从最旧开始截断到 shortTermTokenBudget，所以这里多留 20% 余量后
+ * 丢掉的消息本来也不会进入提示词；但它能避免每次生成都对全部历史做
+ * 正则清洗、时间戳格式化和 token 估算（数据多时这正是点击生成后卡顿的来源）。
+ */
+function trimMessagesToTailTokenBudget<T extends { content: string }>(messages: T[], budget: number): T[] {
+    if (!Number.isFinite(budget) || budget <= 0 || messages.length === 0) return messages;
+    const limit = budget * 1.2;
+    let total = 0;
+    let start = messages.length;
+    for (let i = messages.length - 1; i >= 0; i--) {
+        const cost = estimateTokens(messages[i].content) + 4;
+        if (total > 0 && total + cost > limit) break;
+        total += cost;
+        start = i;
+    }
+    return start <= 0 ? messages : messages.slice(start);
+}
+
+/** 历史专用：只把真正会进入 pool 的可见消息计入预算，隐藏的工具轮不占额度。
+ *  仍然从尾部向前扫，但隐藏消息只做廉价字段判断，不做正则/分词。 */
+function trimHistoryToTailTokenBudget(
+    history: ChatMessage[],
+    budget: number,
+    includeNativeToolHistory?: boolean,
+): ChatMessage[] {
+    if (!Number.isFinite(budget) || budget <= 0 || history.length === 0) return history;
+    const limit = budget * 1.2;
+    let total = 0;
+    let start = history.length;
+    for (let i = history.length - 1; i >= 0; i--) {
+        const message = history[i];
+        if (isPromptHiddenChatMessage(message, { includeNativeToolHistory })) {
+            start = i;
+            continue;
+        }
+        const cost = estimateTokens(message.content) + 4;
+        if (total > 0 && total + cost > limit) break;
+        total += cost;
+        start = i;
+    }
+    return start <= 0 ? history : history.slice(start);
+}
+
 export function loadNativeTimeline(
     characterId: string,
     options?: {
@@ -189,6 +236,11 @@ export function loadNativeTimeline(
         appId?: import("./settings-types").ContentAppId;
         excludeOfflineSessionId?: string;
         memoryTarget?: "short_term" | "long_term" | "core";
+        /**
+         * 只格式化最近约这么多 token 的消息。装配阶段从最旧开始截断，
+         * 更早的内容本来就不会进入提示词；不设则扫描全部（记忆总结/档案页用）。
+         */
+        scanTokenBudget?: number;
         timeAware?: boolean;
         promptTimestampOptions?: PromptTimestampOptions;
     }
@@ -223,7 +275,7 @@ export function loadNativeTimeline(
 
     // Process group sessions
     for (const gs of groupSessions) {
-        const messages = messagesOf(gs.id);
+        const messages = trimMessagesToTailTokenBudget(messagesOf(gs.id), (options?.scanTokenBudget ?? 0) * 2);
         for (const msg of messages) {
             if (msg.isRetracted) continue;
             if (isPromptHiddenChatMessage(msg)) continue;
@@ -313,7 +365,7 @@ export function loadNativeTimeline(
     }
 
     if (session) {
-        const messages = messagesOf(session.id);
+        const messages = trimMessagesToTailTokenBudget(messagesOf(session.id), (options?.scanTokenBudget ?? 0) * 2);
         for (const msg of messages) {
             if (msg.isRetracted) continue;
             if (isPromptHiddenChatMessage(msg)) continue;
@@ -1126,13 +1178,16 @@ export function prepareShortTermContext(
     wbActivationContext: string;
     unifiedRecentItems: UnifiedRecentItem[];
 } {
+    const prepareStartedAt = typeof performance !== "undefined" ? performance.now() : Date.now();
     const timeAware = resolvePromptTimeAware(options?.timeAware);
+    const memConfig = loadMemoryConfig();
     let timeline = loadNativeTimeline(characterId, {
         userName: options?.userName,
         appId: appId as import("./settings-types").ContentAppId,
         excludeOfflineSessionId: options?.excludeOfflineSessionId,
         afterTimestamp: options?.afterTimestamp,
         memoryTarget: options?.memoryTarget,
+        scanTokenBudget: memConfig.shortTermTokenBudget,
         timeAware,
         promptTimestampOptions: options?.promptTimestampOptions,
     });
@@ -1143,7 +1198,6 @@ export function prepareShortTermContext(
     if (options?.includeStoryPublic === false) {
         timeline = timeline.filter((entry) => entry.sourceApp !== "story");
     }
-    const memConfig = loadMemoryConfig();
     timeline = filterTimelineByAllowedSources(timeline, memConfig.shortTermAllowedSources);
     timeline = limitTimelineForApp(timeline, appId, memConfig.shortTermAppLimits as Record<string, unknown> | undefined);
 
@@ -1152,11 +1206,16 @@ export function prepareShortTermContext(
     const budget = memConfig.shortTermTokenBudget;
     const currentTag = getFeatureTag(appId);
     const history = options?.history ?? [];
+    // 只保留最近约 budget token 的历史：更早的轮次最终会被截掉，先裁掉可以
+    // 避免对全量历史做格式化/分词（用户把预算降到几千仍然卡，就是因为这里
+    // 之前始终扫描完整 history）。
+    const historyForPool = trimHistoryToTailTokenBudget(history, budget, options?.includeNativeToolHistory);
+    const historyPoolOffset = history.length - historyForPool.length;
     // Offline/life callers often pass the online chat as `history`; keep those
     // messages once (in history) instead of injecting the same rows again as
     // `recent_chat`. This preserves the online-chat memory while avoiding the
     // duplicate block that used to over-weight old topics.
-    const historyMessageIds = new Set(history.map(message => message.id));
+    const historyMessageIds = new Set(historyForPool.map(message => message.id));
     const characterName = loadCharacters().find(c => c.id === characterId)?.name ?? "角色";
     const wrapsCurrentHistory = appId === "chat" || appId === "group_chat" || appId === "story" || appId === "vn" || appId === "adventure";
     const skipDirectChatEntries = appId === "chat" && !options?.includeDirectChatEntries;
@@ -1278,7 +1337,7 @@ export function prepareShortTermContext(
         raw.push({ tag: "recent_chat", order: FEATURE_ORDER.chat, entries: offlineDirectChatEntries });
     }
 
-    const coReadingEntries = buildCoReadingBoundaryEntries(history, {
+    const coReadingEntries = buildCoReadingBoundaryEntries(historyForPool, {
         characterName,
         userName: options?.userName ?? "用户",
         timeAware,
@@ -1309,9 +1368,10 @@ export function prepareShortTermContext(
             pool.push({ kind: "entry", timestamp: e.timestamp, tokens: estimateTokens(e.content) + 4, entryId: e.id, sourceTag: r.tag });
         }
     }
-    for (let i = 0; i < history.length; i++) {
-        if (isPromptHiddenChatMessage(history[i], { includeNativeToolHistory: options?.includeNativeToolHistory })) continue;
-        pool.push({ kind: "history", timestamp: history[i].createdAt, tokens: estimateTokens(history[i].content) + 4, msgIdx: i });
+    for (let i = 0; i < historyForPool.length; i++) {
+        const message = historyForPool[i];
+        if (isPromptHiddenChatMessage(message, { includeNativeToolHistory: options?.includeNativeToolHistory })) continue;
+        pool.push({ kind: "history", timestamp: message.createdAt, tokens: estimateTokens(message.content) + 4, msgIdx: historyPoolOffset + i });
     }
 
     pool.sort((a, b) => compareTimelineTimestamps(a.timestamp, b.timestamp));
@@ -1336,8 +1396,8 @@ export function prepareShortTermContext(
     }
 
     // Build truncated history (preserve original order)
-    const truncatedHistoryWithOrigIdx = history
-        .map((msg, idx) => ({ msg, idx }))
+    const truncatedHistoryWithOrigIdx = historyForPool
+        .map((msg, idx) => ({ msg, idx: historyPoolOffset + idx }))
         .filter(item => survivingMsgIndices.has(item.idx));
     const truncatedHistory = truncatedHistoryWithOrigIdx.map(item => item.msg);
     const historyIndexMap = new Map<number, number>();
@@ -1383,6 +1443,15 @@ export function prepareShortTermContext(
         });
     }
 
+    recordPerformanceMetric("prompt.short_term.prepare", (typeof performance !== "undefined" ? performance.now() : Date.now()) - prepareStartedAt, {
+        appId,
+        budget,
+        historyTotal: history.length,
+        historyScanned: historyForPool.length,
+        timelineEntries: timeline.length,
+        poolSize: pool.length,
+        keptMessages: truncatedHistory.length,
+    });
     return { recentBlocks, truncatedHistory, wbActivationContext, unifiedRecentItems };
 }
 
@@ -1417,6 +1486,7 @@ export function prepareGroupShortTermContext(
             userName: options?.userName,
             appId: "group_chat",
             excludeOfflineSessionId: options?.excludeOfflineSessionId,
+            scanTokenBudget: memConfig.shortTermTokenBudget,
             timeAware,
             promptTimestampOptions: options?.promptTimestampOptions,
         });
@@ -1553,13 +1623,16 @@ export function prepareGroupShortTermContext(
             });
         }
     }
-    for (let i = 0; i < history.length; i++) {
-        if (isPromptHiddenChatMessage(history[i], { includeNativeToolHistory: options?.includeNativeToolHistory })) continue;
+    const historyForPool = trimHistoryToTailTokenBudget(history, memConfig.shortTermTokenBudget, options?.includeNativeToolHistory);
+    const historyPoolOffset = history.length - historyForPool.length;
+    for (let i = 0; i < historyForPool.length; i++) {
+        const message = historyForPool[i];
+        if (isPromptHiddenChatMessage(message, { includeNativeToolHistory: options?.includeNativeToolHistory })) continue;
         pool.push({
             kind: "history",
-            timestamp: history[i].createdAt,
-            tokens: estimateTokens(history[i].content) + 4,
-            msgIdx: i,
+            timestamp: message.createdAt,
+            tokens: estimateTokens(message.content) + 4,
+            msgIdx: historyPoolOffset + i,
         });
     }
 
@@ -1581,8 +1654,8 @@ export function prepareGroupShortTermContext(
             survivingMsgIndices.add(item.msgIdx);
         }
     }
-    const truncatedHistoryWithOrigIdx = history
-        .map((msg, idx) => ({ msg, idx }))
+    const truncatedHistoryWithOrigIdx = historyForPool
+        .map((msg, idx) => ({ msg, idx: historyPoolOffset + idx }))
         .filter((item) => survivingMsgIndices.has(item.idx));
     const truncatedHistory = truncatedHistoryWithOrigIdx.map(item => item.msg);
     const historyIndexMap = new Map<number, number>();
