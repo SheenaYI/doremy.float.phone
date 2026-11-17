@@ -2369,6 +2369,17 @@
   flex-shrink: 0;
 }
 
+.pv-composition {
+  padding: 6px 14px 0;
+  font-size: calc(10px * var(--app-text-scale, 1));
+  color: var(--c-icon);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  flex-shrink: 0;
+  opacity: .78;
+}
+
 /* ── Hero Card (large visual card) ── */
 .card-hero {
   display: flex;

@@ -1039,6 +1039,15 @@ export function DebugPromptPanel() {
 
     const totalChars = displayMessages.reduce((sum, m) => sum + stringifyContent(m.content).length, 0);
     const estimatedTokens = Math.round(totalChars / 2);
+    // 角色分段：提示词查看器只统计 messages（不含 native tool schema），
+    // 这里先说明 30k 到底堆在哪；与 API usage 的差额通常就是工具定义/图片。
+    const roleChars: Record<string, number> = {};
+    let largestMessage = { index: -1, role: "", chars: 0 };
+    displayMessages.forEach((message, index) => {
+        const chars = stringifyContent(message.content).length;
+        roleChars[message.role] = (roleChars[message.role] ?? 0) + chars;
+        if (chars > largestMessage.chars) largestMessage = { index, role: message.role, chars };
+    });
 
     const debugTabs: [DebugMode, string][] = [
         ["chat", activeChatSession?.isGroup ? "群聊" : "聊天"],
@@ -1614,10 +1623,20 @@ export function DebugPromptPanel() {
             {displayMessages.length > 0 && (
                 <>
                     <div className="pv-divider" />
+                    <div className="pv-composition">
+                        <span>system {Math.round((roleChars.system ?? 0) / 2).toLocaleString()} tok</span>
+                        <span>user {Math.round((roleChars.user ?? 0) / 2).toLocaleString()} tok</span>
+                        <span>assistant {Math.round((roleChars.assistant ?? 0) / 2).toLocaleString()} tok</span>
+                        {(roleChars.tool ?? 0) > 0 ? <span>tool {Math.round((roleChars.tool ?? 0) / 2).toLocaleString()} tok</span> : null}
+                        {largestMessage.index >= 0 ? (
+                            <span>最大 #{largestMessage.index + 1} {largestMessage.role} {Math.round(largestMessage.chars / 2).toLocaleString()} tok</span>
+                        ) : null}
+                    </div>
                     <div className="pv-footer">
                         <span>{displayMessages.length} 条消息</span>
                         <span>{totalChars.toLocaleString()} 字符</span>
                         <span>~{estimatedTokens.toLocaleString()} tokens</span>
+                        <span>（不含工具定义）</span>
                     </div>
                 </>
             )}
