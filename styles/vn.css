@@ -1741,21 +1741,41 @@
   .vnc-satellite { animation: none; }
 }
 
-/* Dialogue and status share one layout column; controls keep their own safe area. */
-.vn-dialogue { padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 68px); max-height: calc(100% - var(--page-header-safe-top, 48px) - 90px); display:flex; flex-direction:column; }
-.vn-dialogue-inner { min-height:100px; overflow-y:auto; flex:1 1 auto; overscroll-behavior:contain; }
-.vn-status-drawer { flex:0 1 auto; width:100%; color:var(--vn-text-color, #f4eee6); background:var(--vn-box-bg); border:1px solid var(--vn-box-border); border-radius:0 0 var(--vn-box-radius) var(--vn-box-radius); overflow:hidden; }
-.vn-status-drawer-heading { display:flex; min-height:30px; align-items:center; }
-.vn-status-drawer-heading button { color:inherit; background:transparent; border:0; padding:6px 12px; display:flex; gap:8px; align-items:center; }
-.vn-status-drawer-heading button:first-child { flex:1; justify-content:space-between; font-size:11px; }
-.vn-status-drawer-body { max-height:min(24dvh, 190px); overflow:auto; overscroll-behavior:contain; padding:8px 12px; font-size:12px; }
-.vn-status-drawer-field { display:flex; align-items:center; flex-wrap:wrap; gap:8px; margin:5px 0; }
-.vn-status-drawer-field progress { width:80px; height:5px; }
-.vn-map { color:var(--vn-text-color, #f2ede7); background:var(--vn-ui-panel, #191b23); display:flex; flex-direction:column; min-height:0; }
+/* Keep the dialogue near its original height and scroll only its content.
+   The name plate extends above the frame, outside the scrolling region. */
+.vn-dialogue {
+  --vn-dialogue-clearance: clamp(76px, 22dvh, 200px);
+  bottom: calc(env(safe-area-inset-bottom, 0px) + var(--vn-dialogue-clearance));
+  padding: 18px 16px 0;
+  max-height: calc(100% - var(--page-header-safe-top, 48px) - 64px - env(safe-area-inset-bottom, 0px) - var(--vn-dialogue-clearance));
+  display: flex;
+  flex-direction: column;
+}
+.vn-dialogue-inner {
+  min-height: 100px;
+  min-width: 0;
+  overflow: visible;
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+}
+.vn-dialogue-scroll { min-height: 0; flex: 1 1 auto; overflow-y: auto; overscroll-behavior: contain; }
+.vn-name { max-width: calc(100% - 40px); overflow-wrap: anywhere; }
+.vn-status-drawer { display: flex; flex-direction: column; flex: 0 1 auto; min-height: 44px; width: 100%; color: var(--vn-text-color, #f4eee6); background: var(--vn-box-bg); border: 1px solid var(--vn-box-border); border-radius: 0 0 var(--vn-box-radius) var(--vn-box-radius); overflow: hidden; }
+.vn-status-drawer-heading { flex-shrink: 0; display: flex; min-height: 44px; align-items: stretch; }
+.vn-status-drawer-heading button { color: inherit; background: transparent; border: 0; min-height: 44px; min-width: 44px; padding: 6px 12px; display: flex; gap: 8px; align-items: center; }
+.vn-status-drawer-heading button:first-child { flex: 1; justify-content: space-between; font-size: 12px; }
+.vn-status-drawer-body { min-height: 0; flex: 0 1 auto; max-height: min(20dvh, 150px); overflow: auto; overscroll-behavior: contain; padding: 8px 12px; font-size: 12px; }
+.vn-status-drawer-field { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 5px 0; }
+.vn-status-drawer-field progress { width: 80px; height: 5px; }
+.vn-map { font-size: calc(13px * var(--app-text-scale, 1)); line-height: 1.5; color:var(--vn-text-color, #f2ede7); background:var(--vn-ui-panel, #191b23); display:flex; flex-direction:column; min-height:0; }
 .vn-map-full { position:absolute; inset:0; z-index:80; padding-top:var(--page-header-safe-top, 48px); padding-bottom:env(safe-area-inset-bottom); }
+.vn-map-editor button, .vn-map-full button { font: inherit; }
+.vn-map-list button { max-width: 100%; text-align: left; overflow-wrap: anywhere; }
 .vn-map-editor { border-radius:16px; overflow:hidden; min-height:420px; }
 .vn-map-header, .vn-tool-panel header { display:flex; align-items:center; gap:12px; padding:12px; flex-shrink:0; }
 .vn-map-header strong, .vn-tool-panel h2 { flex:1; margin:0; font-size:16px; }
+.vn-map-header strong { font-size: calc(14px * var(--app-text-scale, 1)); overflow-wrap: anywhere; min-width: 0; }
 .vn-map button, .vn-tool-panel button { display:inline-flex; align-items:center; justify-content:center; gap:6px; color:inherit; background:var(--vn-ui-input, rgba(128,128,128,.16)); border:1px solid var(--vn-box-border, rgba(128,128,128,.3)); padding:8px 12px; border-radius:8px; min-height:36px; cursor:pointer; }
 .vn-map button:disabled, .vn-tool-panel button:disabled { opacity:.45; cursor:default; }
 .vn-map-tools, .vn-map-fields { display:flex; align-items:center; flex-wrap:wrap; gap:8px; padding:10px 12px; }
@@ -1766,7 +1786,7 @@
 .vn-map-canvas>img { width:100%; height:auto; display:block; user-select:none; }
 .vn-map button.vn-map-pin { position:absolute; transform:translate(-50%,-50%); padding:4px; border:0; background:transparent; color:white; max-width:65%; text-shadow:0 2px 4px #111; }
 .vn-map-pin svg { fill:#e45b83; stroke:white; flex-shrink:0; }
-.vn-map-pin span { background:rgba(15,18,30,.78); padding:5px 9px; border-radius:3px; font-family:var(--vn-font-family, inherit); overflow-wrap:anywhere; }
+.vn-map-pin span { font-size: calc(12px * var(--app-text-scale, 1)); background:rgba(15,18,30,.78); padding:5px 9px; border-radius:3px; font-family:var(--vn-font-family, inherit); overflow-wrap:anywhere; }
 .vn-map-pin[data-selected] { outline:2px solid #e9c88f; outline-offset:3px; }
 .vn-map-list { display:flex; flex-wrap:wrap; gap:12px; padding:20px; overflow:auto; }
 .vn-tool-panel { width:min(100%, 600px); height:100%; margin-left:auto; overflow:auto; overscroll-behavior:contain; padding:var(--page-header-safe-top, 48px) 18px 24px; color:var(--vn-text-color, #eee8e2); background:var(--vn-box-bg, #191b23); display:flex; flex-direction:column; gap:16px; }

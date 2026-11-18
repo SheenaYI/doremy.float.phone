@@ -33,7 +33,6 @@ import { splitBilingualText } from "@/lib/bilingual-text";
 import { playAudioBlobViaMediaElement, resolveVoiceConfig, synthesizeSpeech, unlockAudioPlayback } from "@/lib/tts-service";
 import {
   getVnStatusConfig,
-  isVnStatusActive,
   mergeVnStatusRaw,
   saveVnStatusConfig,
   VN_STATUS_UPDATED_EVENT,
@@ -121,7 +120,6 @@ export function VnPlayer({ characterId, chapterIndex, onClose, onChapterEnd, vnT
   const [writeChapterSummaryToPrompt, setWriteChapterSummaryToPrompt] = useState(true);
   const [statusConfig, setStatusConfig] = useState<VnStatusConfig>(() => getVnStatusConfig(characterId));
   const [statusSettingsOpen, setStatusSettingsOpen] = useState(false);
-  const [statusVisible, setStatusVisible] = useState(true);
   const [showScenePicker, setShowScenePicker] = useState(false);
   const [showReplayConfirm, setShowReplayConfirm] = useState(false);
   const [isReplaying, setIsReplaying] = useState(false);
@@ -1100,7 +1098,6 @@ export function VnPlayer({ characterId, chapterIndex, onClose, onChapterEnd, vnT
     setStatusConfig(next);
     saveVnStatusConfig(characterId, next);
     setStatusSettingsOpen(false);
-    setStatusVisible(isVnStatusActive(next));
   };
 
   return (
@@ -1202,11 +1199,14 @@ export function VnPlayer({ characterId, chapterIndex, onClose, onChapterEnd, vnT
           className={`vn-dialogue ${hideDialogue && !waitingForInput && !isReplaying ? "vn-dialogue-hidden" : ""}`}
         >
           <div className="vn-dialogue-inner" onClick={(e) => { if (waitingForInput && !isReplaying) e.stopPropagation(); }}>
+            {(isReplaying ? replayFrame?.speaker : waitingForInput ? userName : frame?.speaker) && (
+              <div className="vn-name">{isReplaying ? replayFrame?.speaker : waitingForInput ? userName : frame?.speaker}</div>
+            )}
+            <div className="vn-dialogue-scroll">
             {/* ── Replay mode ── */}
             {isReplaying && replayFrame && (
               <>
                 {renderFrameVoiceButton(replayFrame)}
-                {replayFrame.speaker && <div className="vn-name">{replayFrame.speaker}</div>}
                 <div className={`vn-text ${!replayFrame.speaker ? "vn-text-narration" : ""}`}>
                   {replayFrame.speaker && bilingualTranslationEnabled ? (
                     <BilingualTextBlock text={replayDialogueText} mode="plain" defaultExpanded={defaultTranslationExpanded} />
@@ -1224,7 +1224,6 @@ export function VnPlayer({ characterId, chapterIndex, onClose, onChapterEnd, vnT
             {!isReplaying && !waitingForInput && frame && (
               <>
                 {renderFrameVoiceButton(frame)}
-                {frame.speaker && <div className="vn-name">{frame.speaker}</div>}
                 <div className={`vn-text ${isNarration ? "vn-text-narration" : ""}`}>
                   {frame.speaker && bilingualTranslationEnabled ? (
                     <BilingualTextBlock text={currentDialogueText} mode="plain" defaultExpanded={defaultTranslationExpanded} />
@@ -1246,9 +1245,6 @@ export function VnPlayer({ characterId, chapterIndex, onClose, onChapterEnd, vnT
             {/* ── Input mode ── */}
             {!isReplaying && waitingForInput && !isGenerating && (
               <>
-                <div className="vn-name">
-                  {userName}
-                </div>
 
                 {/* Choices from AI */}
                 {currentOptions && currentOptions.choices.length > 0 && pendingActions.length === 0 && (
@@ -1320,17 +1316,15 @@ export function VnPlayer({ characterId, chapterIndex, onClose, onChapterEnd, vnT
                 </div>
               </>
             )}
+            </div>
           </div>
-      {isVnStatusActive(statusConfig) && statusVisible ? (
         <VnStatusFloat
           characterId={characterId}
           config={statusConfig}
           raw={currentStatusRaw}
           containerRef={vnShellRef}
           onSettings={() => setStatusSettingsOpen(true)}
-          onHide={() => setStatusVisible(false)}
         />
-      ) : null}
 
         </div>
       )}
