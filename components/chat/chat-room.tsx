@@ -1359,6 +1359,7 @@ export function ChatRoom({ session, onBack, onDeleted, isActive = true }: ChatRo
     const offlineStreamAccumRef = useRef("");
     // 群聊/单聊流式预览解析的 rAF 合并帧（限频：一帧最多解析一次全文）
     const streamParseFrameRef = useRef(0);
+    const streamPreviewLastUpdateRef = useRef(0);
     // 线下模式流式预览解析的 rAF 合并帧（独立于线上，避免互相干扰）
     const offlineStreamFrameRef = useRef(0);
     const [activeOfflineTarget, setActiveOfflineTarget] = useState<OfflineActionTarget | null>(null);
@@ -3585,6 +3586,9 @@ export function ChatRoom({ session, onBack, onDeleted, isActive = true }: ChatRo
                             streamParseFrameRef.current = window.requestAnimationFrame(() => {
                                 streamParseFrameRef.current = 0;
                                 if (!isCurrentGeneration()) return;
+                                const nowMs = typeof performance !== "undefined" ? performance.now() : Date.now();
+                                if (nowMs - streamPreviewLastUpdateRef.current < 100) return;
+                                streamPreviewLastUpdateRef.current = nowMs;
                                 const nameToId = new Map(groupCharacters.map(item => [item.name, item.id]));
                                 const rawParts = parseGroupChatResponse(streamAccumRef.current, nameToId);
                                 const parts = rawParts
@@ -3603,6 +3607,7 @@ export function ChatRoom({ session, onBack, onDeleted, isActive = true }: ChatRo
                                 streamParseFrameRef.current = 0;
                             }
                             streamAccumRef.current = "";
+                            streamPreviewLastUpdateRef.current = 0;
                             setStreamPreview(null);
                         },
                     },
@@ -3632,6 +3637,9 @@ export function ChatRoom({ session, onBack, onDeleted, isActive = true }: ChatRo
                             streamParseFrameRef.current = window.requestAnimationFrame(() => {
                                 streamParseFrameRef.current = 0;
                                 if (!isCurrentGeneration()) return;
+                                const nowMs = typeof performance !== "undefined" ? performance.now() : Date.now();
+                                if (nowMs - streamPreviewLastUpdateRef.current < 100) return;
+                                streamPreviewLastUpdateRef.current = nowMs;
                                 setStreamPreview({ texts: splitStreamPreviewSegments(cleanStreamText(streamAccumRef.current, { stripXmlTags: streamPreviewTagConfig.online, stripLiterals: streamPreviewTagConfig.stripTexts })) });
                             });
                         },
@@ -3641,6 +3649,7 @@ export function ChatRoom({ session, onBack, onDeleted, isActive = true }: ChatRo
                                 streamParseFrameRef.current = 0;
                             }
                             streamAccumRef.current = "";
+                            streamPreviewLastUpdateRef.current = 0;
                             setStreamPreview(null);
                         },
                     },
