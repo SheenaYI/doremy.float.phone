@@ -10,6 +10,7 @@ import { storeMediaBase64 } from "@/lib/media-cache-storage";
 import { ChatSession, ChatMessage, CHAT_APP_SETTINGS_UPDATED_EVENT, CHAT_INITIAL_VISIBLE_MESSAGE_COUNT, CHAT_LOAD_MORE_MESSAGE_COUNT, CHAT_REQUEST_REPLY_EVENT, loadChatAppSettings, loadChatMessages, loadChatSessions, saveChatSessions, pushChatMessage, updateChatMessage, deleteChatMessage, deleteChatMessagesFrom, deleteChatMessagesByIds, retractChatMessage, editChatMessage, updateMessageMediaData, replaceResponseBatchWithParts, replaceGroupResponseRound, isReadingDiscussMessage, isSystemInstructionMessage, getSystemInstructionDisplayContent, createResponseBatchId, createResponseRoundId, getLatestStateValues, getLatestCharacterStateValues, compareChatMessages, isSessionStreamingEnabled, resolveChatBackgroundImage, resolveChatUserAvatar, resolveSessionCharacterId } from "@/lib/chat-storage";
 import { cleanStreamText, splitStreamPreviewSegments, stripLiteralTexts, stripXmlTagBlocks } from "@/lib/stream-preview";
 import type { StateValue } from "@/lib/chat-storage";
+import { loadMemoryEntries } from "@/lib/memory-storage";
 import { parseStateValues, mergeStateValues } from "@/lib/state-value-parser";
 import { parseAIResponse, type ParsedMessagePart } from "@/lib/rich-message-parser";
 import { isKnownStickerLabel } from "@/lib/sticker-data";
@@ -1340,6 +1341,17 @@ export function ChatRoom({ session, onBack, onDeleted, isActive = true }: ChatRo
         const resolvedId = resolveSessionCharacterId(session);
         return resolvedId ? chars.find(c => c.id === resolvedId) || null : null;
     });
+    // 进入聊天室后预热记忆条目：避免第一次发送时才从 IndexedDB 全量反序列化。
+    useEffect(() => {
+        if (session.isGroup) return;
+        const charId = resolveSessionCharacterId(session);
+        if (!charId) return;
+        const timer = window.setTimeout(() => {
+            void loadMemoryEntries(charId).catch(() => undefined);
+        }, 1200);
+        return () => window.clearTimeout(timer);
+    }, [session.id, session.isGroup]);
+
     const [isGenerating, setIsGenerating] = useState(false);
     const [sleepNotice, setSleepNotice] = useState<{ pending: number; threshold: number } | null>(null);
     const [offlineMode, setOfflineMode] = useState(false);
