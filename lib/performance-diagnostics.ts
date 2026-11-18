@@ -130,3 +130,12 @@ export function installPerformanceDiagnostics(): () => void {
     }
   };
 }
+
+export function measureSync<T>(name: string, task: () => T): T {
+  const started = now();
+  try { return task(); } finally { recordPerformanceMetric(name, now() - started); }
+}
+export async function measureAsync<T>(name: string, task: () => Promise<T>): Promise<T> {
+  const started = now();
+  try { return await task(); } finally { recordPerformanceMetric(name, now() - started); }
+}

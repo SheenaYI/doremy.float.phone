@@ -1,7 +1,8 @@
 "use client";
 
+import { applyDeviceCompatibilitySettings } from "@/lib/device-compatibility";
+import { installPerformanceDiagnostics } from "@/lib/performance-diagnostics";
 import { useEffect, useState } from "react";
-import { createPortal } from "react-dom";
 import { ArrowRight } from "lucide-react";
 
 import { AccountGate } from "@/components/auth/account-gate";
@@ -20,7 +21,6 @@ import { getThemeAssetMap, readThemeProfile } from "@/lib/theme-storage";
 import { resolveActiveIconSkins, type ThemeProfile } from "@/lib/theme-types";
 import { hasPendingMcpOAuthCallback } from "@/lib/tool-executor";
 import { shouldRequestPwaFullscreen } from "@/lib/pwa-display-mode";
-import { installPerformanceDiagnostics } from "@/lib/performance-diagnostics";
 
 const TEXT = {
   loading: "\u52A0\u8F7D\u4E2D...",
@@ -156,7 +156,7 @@ async function warmBuiltinFonts(shouldStop: () => boolean): Promise<void> {
 
 function SplashScreen({ ready = false, onEnter }: { ready?: boolean; onEnter?: () => void }) {
   return (
-    <main className="app-root splash-root" onClick={ready ? onEnter : undefined}>
+    <main className="app-root splash-root">
       <section
         className="phone-shell-wrap splash-shell-wrap"
         aria-label={TEXT.loading}
@@ -168,6 +168,7 @@ function SplashScreen({ ready = false, onEnter }: { ready?: boolean; onEnter?: (
               <button
                 type="button"
                 className={ready ? "splash-enter-button splash-enter-button-show" : "splash-enter-button"}
+                onClick={onEnter}
                 disabled={!ready}
                 aria-label="Enter"
               >
@@ -236,25 +237,13 @@ export function MainApp() {
   const [splashDismissed, setSplashDismissed] = useState(false);
   const [kvHydrateFailed, setKvHydrateFailed] = useState(false);
   const [initAttempt, setInitAttempt] = useState(0);
-  const [downloadNotice, setDownloadNotice] = useState<{ kind: "success" | "error" | "info"; message: string } | null>(null);
-
-  useEffect(() => installPerformanceDiagnostics(), []);
 
   useEffect(() => {
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    const onDownloadNotice = (event: Event) => {
-      const detail = (event as CustomEvent<{ kind?: string; message?: string }>).detail;
-      if (!detail?.message) return;
-      const kind = detail.kind === "error" || detail.kind === "info" ? detail.kind : "success";
-      setDownloadNotice({ kind, message: detail.message });
-      if (timer) clearTimeout(timer);
-      timer = setTimeout(() => setDownloadNotice(null), kind === "error" ? 6500 : 4200);
-    };
-    window.addEventListener("app-global-notice", onDownloadNotice);
-    return () => {
-      window.removeEventListener("app-global-notice", onDownloadNotice);
-      if (timer) clearTimeout(timer);
-    };
+    applyDeviceCompatibilitySettings();
+    const release = installPerformanceDiagnostics();
+    const resize = () => applyDeviceCompatibilitySettings();
+    window.addEventListener("resize", resize);
+    return () => { release(); window.removeEventListener("resize", resize); };
   }, []);
 
   useEffect(() => {
@@ -290,30 +279,17 @@ export function MainApp() {
       }
     })();
 
-    // 网页端与移动端统一尝试浏览器全屏；只能在用户手势中请求，失败时给出明确提示。
-    // 是否请求仍由「全屏/显示系统状态栏」偏好决定，切换设置后无需重载。
-    let fullscreenNoticeShown = false;
-    const showFullscreenNoticeOnce = (message: string) => {
-      if (fullscreenNoticeShown) return;
-      fullscreenNoticeShown = true;
-      window.dispatchEvent(new CustomEvent("app-global-notice", { detail: { kind: "info", message } }));
+    // 安卓全屏兜底。是否请求全屏在每次点击时读取，设置切换后无需重载。
+    const isMobile = window.matchMedia("(max-width: 500px) and (hover: none) and (pointer: coarse)").matches;
+    if (!isMobile) return () => {
+      cancelled = true;
     };
+
     function tryFullscreen() {
       if (!shouldRequestPwaFullscreen()) return;
-      // A document-wide fullscreen request can stall Android WebView media surfaces
-      // (both local <video> and third-party iframe players). The watch app must keep
-      // its own viewport stable; use the player's native fullscreen control instead.
-      const watchApp = document.querySelector<HTMLElement>(".watch-together-app");
-      if (watchApp && watchApp.getClientRects().length > 0) return;
       const doc = document.documentElement;
       if (document.fullscreenElement) return;
-      if (typeof doc.requestFullscreen !== "function") {
-        showFullscreenNoticeOnce("当前浏览器不支持网页强制全屏。普通网页仍会显示浏览器地址栏；如需更沉浸的显示，可将网站添加到主屏幕后打开。");
-        return;
-      }
-      void doc.requestFullscreen().catch(() => {
-        showFullscreenNoticeOnce("浏览器没有允许网页进入全屏。普通网页无法强行隐藏浏览器地址栏；可尝试添加到主屏幕运行。");
-      });
+      doc.requestFullscreen?.().catch(() => { });
     }
     document.addEventListener("click", tryFullscreen);
     return () => {
@@ -365,23 +341,6 @@ export function MainApp() {
             {/* 壳推送订阅的兜底注册：壳原生那次失败是静默的，这里可验证地补一次 */}
             <ShellPushRegistrar />
           </MusicProvider>
-          {downloadNotice && typeof document !== "undefined" && createPortal(
-            <div
-            role={downloadNotice.kind === "error" ? "alert" : "status"}
-            aria-live={downloadNotice.kind === "error" ? "assertive" : "polite"}
-            className="fixed left-1/2 z-[99999] max-w-[min(92vw,440px)] -translate-x-1/2 rounded-2xl px-4 py-3 text-sm shadow-xl backdrop-blur-xl"
-            style={{
-            bottom: "calc(env(safe-area-inset-bottom, 0px) + 24px)",
-            color: downloadNotice.kind === "error" ? "#7f1d1d" : "#24352b",
-            background: downloadNotice.kind === "error" ? "rgba(254,226,226,.97)" : downloadNotice.kind === "info" ? "rgba(255,251,235,.97)" : "rgba(236,253,245,.97)",
-            border: "1px solid " + (downloadNotice.kind === "error" ? "rgba(220,38,38,.24)" : "rgba(22,101,52,.16)"),
-            overflowWrap: "anywhere",
-            }}
-            >
-            {downloadNotice.message}
-            </div>
-            , document.body
-          )}
         </main>
       )}
     </AccountGate>

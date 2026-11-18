@@ -1,17 +1,14 @@
 // lib/reading-parser.ts — File parsing for TXT, EPUB, PDF.
 
-import type { PdfJsDocument, PdfJsLibrary } from "./pdfjs-types";
-
 // ── PDF.js CDN loader ──
 const PDFJS_VERSION = "3.11.174"; // stable version available on cdnjs
 const PDFJS_CDN = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${PDFJS_VERSION}`;
-let _pdfjsPromise: Promise<PdfJsLibrary> | null = null;
+let _pdfjsPromise: Promise<any> | null = null;
 
-function loadPdfjs(): Promise<PdfJsLibrary> {
+function loadPdfjs(): Promise<any> {
     if (_pdfjsPromise) return _pdfjsPromise;
     _pdfjsPromise = new Promise((resolve, reject) => {
-        const existing = (window as Window & { pdfjsLib?: PdfJsLibrary }).pdfjsLib;
-        if (existing) { resolve(existing); return; }
+        if ((window as any).pdfjsLib) { resolve((window as any).pdfjsLib); return; }
         const script = document.createElement("script");
         script.src = `${PDFJS_CDN}/pdf.min.mjs`;
         script.type = "module";
@@ -19,7 +16,7 @@ function loadPdfjs(): Promise<PdfJsLibrary> {
         script.src = `${PDFJS_CDN}/pdf.min.js`;
         script.type = "text/javascript";
         script.onload = () => {
-            const lib = (window as Window & { pdfjsLib?: PdfJsLibrary }).pdfjsLib;
+            const lib = (window as any).pdfjsLib;
             if (lib) {
                 lib.GlobalWorkerOptions.workerSrc = `${PDFJS_CDN}/pdf.worker.min.js`;
                 resolve(lib);
@@ -494,7 +491,7 @@ function buildPdfChunkTitle(startPage: number, endPage: number): string {
     return `第${startPage}-${endPage}页`;
 }
 
-async function openPdfDocument(source: PdfSource): Promise<{ pdf: PdfJsDocument; dispose: () => Promise<void> }> {
+async function openPdfDocument(source: PdfSource): Promise<{ pdf: any; dispose: () => Promise<void> }> {
     const pdfjsLib = await loadPdfjs();
     if (source instanceof Blob) {
         const url = URL.createObjectURL(source);
@@ -514,7 +511,7 @@ async function openPdfDocument(source: PdfSource): Promise<{ pdf: PdfJsDocument;
     };
 }
 
-async function readPdfBaseMeta(pdf: PdfJsDocument, fileName?: string) {
+async function readPdfBaseMeta(pdf: any, fileName?: string) {
     const bookTitle = fileName?.replace(/\.[^.]+$/, "") || "未命名";
     const metadata = await pdf.getMetadata().catch(() => null);
     const info = metadata?.info as Record<string, unknown> | undefined;
@@ -582,7 +579,7 @@ export async function parsePdfPageRange(
         const pageHeight = viewport.height;
         const chunk = ensureChunk(i);
 
-        const items = textContent.items;
+        const items = textContent.items as { str?: string; transform?: number[] }[];
         const lines: { text: string; y: number }[] = [];
         let currentLine = "";
         let currentY = -1;

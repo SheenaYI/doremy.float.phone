@@ -1,0 +1,47 @@
+/* Settings-only alignment; shared app cards and appearance pages retain their styles. */
+.settings-main-menu { gap: 28px; }
+.settings-main-menu .settings-menu-section-title {
+  margin-top: 0;
+  font-size: calc(12px * var(--app-text-scale, 1));
+  letter-spacing: .04em;
+  line-height: 1.5;
+  text-transform: none;
+}
+.settings-main-menu .card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: stretch; }
+.settings-main-menu .card-card {
+  aspect-ratio: auto;
+  min-width: 0;
+  min-height: 126px;
+  grid-template-rows: minmax(52px, 1fr) 36px;
+  gap: 12px;
+}
+.settings-main-menu .card-card-body { gap: 5px; }
+.settings-main-menu .card-label { overflow-wrap: anywhere; }
+.settings-main-menu .card-desc {
+  font-size: calc(11px * var(--app-text-scale, 1));
+  line-height: 1.45;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.settings-main-menu .card-featured { padding: 16px; gap: 12px; min-height: 78px; }
+.settings-main-menu .card-featured-desc { font-size: calc(11px * var(--app-text-scale, 1)); line-height: 1.5; }
+.settings-main-menu .card-icon { width: 36px; height: 36px; flex: 0 0 36px; }
+.settings-main-menu .card-icon > svg { width: 22px; height: 22px; }
+.settings-main-menu .glass-icon { width: 30px; height: 30px; }
+.settings-main-menu .settings-diagnostics-entry { margin-top: 10px; }
+.settings-main-menu .settings-tools-header { margin: 0 4px; }
+.settings-main-menu .settings-tools-menu-desc { white-space: normal; line-height: 1.5; font-size: calc(11px * var(--app-text-scale, 1)); }
+.settings-main-menu .card-card, .settings-main-menu .card-featured { opacity: 1; animation: none; }
+.settings-main-menu .app-card:focus-visible { outline: 2px solid var(--c-icon); outline-offset: 3px; }
+@media (max-width: 340px) {
+  .settings-main-menu .card-card { padding: 12px; }
+  .settings-main-menu .card-label { font-size: calc(13px * var(--app-text-scale, 1)); }
+}
+
+.diagnostics-metrics { margin: 0; }
+.diagnostics-metric-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 16px; padding: 10px 0; border-bottom: 1px solid var(--c-border, rgba(128,128,128,.18)); }
+.diagnostics-metric-row dt { font-size: 12px; line-height: 1.5; }
+.diagnostics-metric-row small { display: block; font-size: 11px; color: var(--c-text); line-height: 1.5; }
+.diagnostics-metric-row dd { margin: 0; font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; text-align: right; align-self: center; }

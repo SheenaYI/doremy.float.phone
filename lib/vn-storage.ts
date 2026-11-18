@@ -774,7 +774,7 @@ export function loadVnProjectionEntries(
 
 // ── Global VN Config (key-value in IndexedDB) ──
 
-const _configCache: Record<string, string> = {};
+let _configCache: Record<string, string> = {};
 let _configHydrated = false;
 
 async function hydrateConfig(): Promise<void> {
@@ -801,4 +801,14 @@ export function saveVnConfig(key: string, value: string): void {
     delete _configCache[key];
     vnDb.config.delete(key).catch(() => undefined);
   }
+}
+
+/** Candidate revisions live on the original message; only rawContent enters the timeline. */
+export async function saveVnMessageRevision(messageId: string, patch: Partial<Pick<VnMessage, 'rawContent' | 'roundSummary' | 'statusRaw' | 'frameAudio' | 'variants' | 'selectedVariantId' | 'memoryCommitted'>>): Promise<void> {
+  const message = _messagesCache.find(m => m.id === messageId);
+  if (!message) throw new Error('这条漫卷消息已不存在');
+  const updated = { ...message, ...patch };
+  await vnDb.messages.put(updated);
+  const index = _messagesCache.findIndex(m => m.id === messageId);
+  if (index >= 0) _messagesCache[index] = updated;
 }

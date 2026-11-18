@@ -60,8 +60,10 @@ export function CalendarReviewPage({
   onSaveSummary,
   onSaveExperience,
   onDeleteExperience,
+  generationControls,
   onNotice,
 }: {
+  generationControls?: ReactNode;
   selectedDate: string;
   todayIso: string;
   ownerType: CalendarOwnerType;
@@ -239,6 +241,7 @@ export function CalendarReviewPage({
             <ChevronRight size={18} />
           </button>
         </header>
+        {generationControls}
 
         <section className="calendar-review-mood-card">
           <div className="calendar-review-section-head">

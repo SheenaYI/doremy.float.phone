@@ -15,7 +15,7 @@ const CODE_WIDGET_BRIDGE_SOURCE = "ai-phone-diy-widget";
  *  管不进来——不禁掉的话长按组件文字会选中并呼出系统菜单，打断长按拖拽。
  *  需要可选文本的元素用 input/textarea/[contenteditable]/[data-selectable] 豁免。 */
 export const DIY_WIDGET_GUARD_STYLE = `<style>
-:root { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+:root { touch-action: pan-y; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 input, textarea, [contenteditable], [data-selectable] {
   -webkit-user-select: auto;
   user-select: auto;
@@ -291,6 +291,31 @@ function injectCodeWidgetBridge(html: string, widgetId: string, config: Record<s
     event.preventDefault();
   }, true);
 
+  var swipe = null, suppressClickUntil = 0;
+  document.addEventListener("pointerdown", function(e) {
+    if (!e.isPrimary || (e.pointerType === "mouse" && e.button !== 0)) { swipe = null; return; }
+    if (e.target && e.target.closest && e.target.closest("input,textarea,select,[contenteditable],[data-desktop-swipe-ignore]")) return;
+    swipe = { x:e.clientX, y:e.clientY, id:e.pointerId, locked:false };
+  }, true);
+  document.addEventListener("pointermove", function(e) {
+    if (!swipe || swipe.id !== e.pointerId) return;
+    var dx=e.clientX-swipe.x, dy=e.clientY-swipe.y;
+    if (!swipe.locked && Math.abs(dy)>10 && Math.abs(dy)>Math.abs(dx)) { swipe=null; return; }
+    if (Math.abs(dx)>10 && Math.abs(dx)>Math.abs(dy)*1.25) swipe.locked=true;
+    if (swipe.locked) {
+      cancelLongPress(); suppressClickUntil=Date.now()+400;
+      parent.postMessage({source:SOURCE,type:"swipe",widgetId:widgetId,phase:"move",dx:dx},"*");
+    }
+  }, true);
+  function finishSwipe(e) {
+    if (!swipe) return;
+    if (swipe.locked) parent.postMessage({source:SOURCE,type:"swipe",widgetId:widgetId,phase:e.type==="pointercancel"?"cancel":"end",dx:e.clientX-swipe.x},"*");
+    swipe=null;
+  }
+  document.addEventListener("pointerup",finishSwipe,true);
+  document.addEventListener("pointercancel",finishSwipe,true);
+  document.addEventListener("click",function(e){if(Date.now()<suppressClickUntil){e.preventDefault();e.stopImmediatePropagation();}},true);
+
   // 长按进入桌面编辑态：指针事件被本 iframe 吃掉、宿主检测不到长按，
   // 这里代为检测（500ms 内位移 <10px），命中后通知宿主。
   // 输入/可选中元素与标了 data-no-longpress 的交互区不参与。
@@ -462,9 +487,14 @@ function DIYCodeWidgetFrame({ widget, template, onConfigChange }: Omit<Props, "p
     function handleMessage(event: MessageEvent) {
       const data = event.data;
       if (!isPlainObject(data)) return;
-      if (data.source !== CODE_WIDGET_BRIDGE_SOURCE || data.type !== "saveConfig") return;
+      if (data.source !== CODE_WIDGET_BRIDGE_SOURCE || !["saveConfig", "swipe"].includes(String(data.type))) return;
       if (data.widgetId !== widget.id) return;
       if (iframeRef.current?.contentWindow && event.source !== iframeRef.current.contentWindow) return;
+      if (data.type === "swipe") {
+        if (typeof data.dx !== "number" || !Number.isFinite(data.dx) || !["move", "end", "cancel"].includes(String(data.phase))) return;
+        window.dispatchEvent(new CustomEvent("desktop-diy-swipe", { detail: { widgetId: widget.id, phase: data.phase, dx: data.dx } }));
+        return;
+      }
       const patch = sanitizeWidgetConfigPatch(data.patch);
       if (Object.keys(patch).length === 0) return;
       onConfigChange?.(widget.id, patch);

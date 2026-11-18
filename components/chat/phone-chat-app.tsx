@@ -4,11 +4,10 @@ import { memo, useState, useEffect, useRef } from "react";
 import { ChatMessageList } from "./chat-message-list";
 import { ChatContactsList } from "./chat-contacts-list";
 import { MomentsFeed } from "./moments-feed";
-import { ChatRoom } from "./chat-room";
+import { ChatRoom, isChatRoomGenerating } from "./chat-room";
 import { MascotChatRoom } from "./mascot-chat-room";
 import { UserProfilePanel } from "./user-profile-panel";
 import { MessageCircle, Users, Aperture, UserRound } from "lucide-react";
-import { ChatHistorySearch } from "./chat-history-search";
 import { ChatSession, loadChatSessions, pushChatMessage, hydrateChatStorage, markChatSessionRead, setActiveChatSessionId } from "@/lib/chat-storage";
 import { notifyMascotPageContext } from "@/lib/mascot-events";
 import { loadCharacters } from "@/lib/character-storage";
@@ -36,7 +35,6 @@ export type PhoneChatAppProps = {
 
 export const PhoneChatApp = memo(function PhoneChatApp({ onClose, initialSessionId, onSessionChange, sharePayload, onShareDone, feedsRequest = 0 }: PhoneChatAppProps) {
     const [activeTab, setActiveTab] = useState<TabKey>("messages");
-    const [showHistorySearch, setShowHistorySearch] = useState(false);
     const [activeSession, setActiveSession] = useState<ChatSession | null>(null);
     const [activeMascot, setActiveMascot] = useState(false);
     // Chat app-level custom CSS (affects all chat pages, lower priority than per-session CSS)
@@ -150,9 +148,12 @@ export const PhoneChatApp = memo(function PhoneChatApp({ onClose, initialSession
         if (activeSession) {
             setActiveMascot(false);
             setVisitedSessions(prev => {
-                if (prev.has(activeSession.id)) return prev;
                 const next = new Map(prev);
-                next.set(activeSession.id, activeSession);
+                next.delete(activeSession.id); next.set(activeSession.id, activeSession);
+                for (const id of next.keys()) {
+                    if (next.size <= 3) break;
+                    if (id !== activeSession.id && !isChatRoomGenerating(id)) next.delete(id);
+                }
                 return next;
             });
             // Push session info to mascot context so 小卷 can access sessionId
@@ -281,7 +282,7 @@ export const PhoneChatApp = memo(function PhoneChatApp({ onClose, initialSession
             {chatAppCSS && <SessionCustomCSS css={chatAppCSS} scope=".chat-app" />}
             {/* The Main Content Area */}
             <div className="chat-main-content relative flex-1 flex flex-col overflow-hidden" {...(activeSession || activeMascot ? { "data-covered-by-room": "" } : {})}>
-                {activeTab === "messages" && <ChatMessageList onCloseApp={onClose} onOpenHistorySearch={() => setShowHistorySearch(true)} activeSession={activeSession} onSelectSession={(session) => { setActiveMascot(false); setActiveSession(session); }} onSelectMascot={handleSelectMascot} />}
+                {activeTab === "messages" && <ChatMessageList onCloseApp={onClose} activeSession={activeSession} onSelectSession={(session) => { setActiveMascot(false); setActiveSession(session); }} onSelectMascot={handleSelectMascot} />}
                 {activeTab === "contacts" && (
                     <ChatContactsList
                         onCloseApp={onClose}
@@ -304,27 +305,7 @@ export const PhoneChatApp = memo(function PhoneChatApp({ onClose, initialSession
                 {activeTab === "me" && <UserProfilePanel onClose={() => setActiveTab("messages")} />}
             </div>
 
-            {showHistorySearch && (
-                <ChatHistorySearch
-                    onClose={() => setShowHistorySearch(false)}
-                    onJump={(sessionId, messageId) => {
-                        const targetSession = loadChatSessions().find(item => item.id === sessionId);
-                        if (!targetSession) return;
-                        setActiveMascot(false);
-                        setActiveTab("messages");
-                        setActiveSession(targetSession);
-                        setShowHistorySearch(false);
-                        // Switching from the global search also mounts a new ChatRoom. Wait for its
-                        // message listener and storage-backed list to be ready before dispatching the jump.
-                        window.setTimeout(() => {
-                            window.dispatchEvent(new CustomEvent("chat-history-jump-to-message", { detail: { sessionId, messageId } }));
-                        }, 360);
-                    }}
-                />
-            )}
-
             {/* Bottom Navigation Bar — hide when inside a chat room */}
-
             <nav className="chat-tab-bar chat-bottom-glass-bar" data-ui="nav" style={{ display: activeSession || activeMascot || hideTabBar ? "none" : undefined }}>
                 <button
                     className={`chat-tab ${activeTab === "messages" ? "chat-tab-active" : ""}`}
@@ -361,7 +342,6 @@ export const PhoneChatApp = memo(function PhoneChatApp({ onClose, initialSession
                 <div key={sess.id} style={{ display: activeSession?.id === sess.id ? undefined : 'none' }} className="chat-room-layer absolute inset-0">
                     <ChatRoom
                         session={sess}
-                        isActive={activeSession?.id === sess.id}
                         onBack={() => setActiveSession(null)}
                         onDeleted={() => {
                             // 会话已删除：把缓存的聊天室一并卸载，避免僵尸挂载

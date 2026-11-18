@@ -49,7 +49,6 @@ import { WidgetRenderer } from "@/components/widgets/widget-renderer";
 import { IconGlyph } from "@/components/icon-glyph";
 import {
   saveThemeAssetFromBlob,
-  readThemeProfile,
   deleteThemeAsset,
   getThemeAssetMap,
   describeAssetSaveError,
@@ -1141,6 +1140,7 @@ function GlobalCSSPage({
   const [localCSS, setLocalCSS] = useState(() => {
     // Read latest from storage in case 小卷 updated it
     try {
+      const { readThemeProfile } = require("@/lib/theme-storage");
       return readThemeProfile().globalCustomCSS || draft.globalCustomCSS;
     } catch { return draft.globalCustomCSS; }
   });

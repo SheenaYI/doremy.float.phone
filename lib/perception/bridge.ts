@@ -1,6 +1,6 @@
 "use client";
-
 import { isCompatibilityFeatureEnabled } from "../device-compatibility";
+
 
 // 感知系统 ↔ 安卓壳的原生桥对接层。
 //
@@ -23,8 +23,6 @@ type PerceptionBridgeLike = {
   hasStepPermission?: () => boolean;
   requestStepPermission?: () => boolean;
   readUsageStats?: (maxEntries: number) => string;
-  configureBackgroundPerception?: (json: string) => boolean;
-  supportsBackgroundDwellTracking?: () => boolean;
   getLocationCapabilities?: () => string;
   hasLocationPermission?: () => boolean;
   requestLocationPermission?: () => boolean;
@@ -41,7 +39,8 @@ type PerceptionBridgeLike = {
 };
 
 function bridge(): PerceptionBridgeLike | null {
-  if (typeof window === "undefined" || !isCompatibilityFeatureEnabled("perception")) return null;
+  if (!isCompatibilityFeatureEnabled("perception")) return null;
+  if (typeof window === "undefined") return null;
   const candidate = (window as unknown as { AndroidShell?: PerceptionBridgeLike }).AndroidShell;
   return candidate && typeof candidate === "object" ? candidate : null;
 }
@@ -149,35 +148,6 @@ export function readUsageStats(maxEntries = 12): AppUsageEntry[] {
 /** 壳是否提供使用统计读取（老 APK 没有）。 */
 export function supportsUsageStats(): boolean {
   return typeof bridge()?.readUsageStats === "function";
-}
-
-/** 是否有原生后台连续停留计时；老 APK 自动回退网页端实现。 */
-export function supportsBackgroundDwellTracking(): boolean {
-  try {
-    return bridge()?.supportsBackgroundDwellTracking?.() === true
-      && typeof bridge()?.configureBackgroundPerception === "function";
-  } catch {
-    return false;
-  }
-}
-
-/** 将感知开关与停留阈值同步到原生无障碍服务的持久化配置。 */
-export function configureBackgroundPerception(config: {
-  enabled: boolean;
-  thresholdMinutes: number;
-  foregroundAppEnabled: boolean;
-  usageStatsEnabled: boolean;
-  usageSignalMinutes: number;
-  usageOverrides: Array<{ pattern: string; minutes: number }>;
-  ruleFilters: Array<{ matchType: string; payloadFilter?: string }>;
-  targetPackage?: string;
-  targetFilter?: string;
-}): boolean {
-  try {
-    return bridge()?.configureBackgroundPerception?.(JSON.stringify(config)) === true;
-  } catch {
-    return false;
-  }
 }
 
 /** 位置桥上报的能力与授权状态（老壳/浏览器返回空对象）。 */
@@ -341,7 +311,7 @@ export function readSleep(): SleepSnapshot | null {
   try {
     const raw = bridge()?.readSleep?.();
     if (!raw) return null;
-    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const parsed = JSON.parse(raw) as { sleepMinutes?: number; sleepEndAt?: number; sleepStartAt?: number };
     const minutes = Number(parsed?.sleepMinutes);
     const endAt = Number(parsed?.sleepEndAt);
     const startAt = Number(parsed?.sleepStartAt);
@@ -426,3 +396,5 @@ export function readNativeCapabilities(): NativePerceptionCapabilities {
     return {};
   }
 }
+
+export type { AppUsageEntry } from "./types";

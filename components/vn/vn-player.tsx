@@ -2,12 +2,13 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ArrowLeft, ArrowRight, Clock, EyeOff, Play, Pause, Volume2, Eye, ChevronDown, Send, MessageSquare, BookOpen, Archive, MapPin, RotateCcw, ListOrdered, Plus, Trash2, ChevronRight, ChevronsDown, Loader2 } from "lucide-react";
+import { ArrowLeft, ArrowRight, Clock, EyeOff, Play, Pause, Volume2, Eye, ChevronDown, Send, MessageSquare, BookOpen, Archive, MapPin, RotateCcw, ListOrdered, Plus, Trash2, ChevronRight, ChevronsDown, Loader2, Settings2 } from "lucide-react";
 import { BilingualTextBlock } from "@/components/chat/message-bubble";
 import {
   createOrGetVnSession,
   loadVnMessagesForChapter,
   pushVnMessage,
+  saveVnMessageRevision,
   updateChapterStartMessageId,
   archiveChapter,
   deleteVnMessage,
@@ -38,6 +39,9 @@ import {
   VN_STATUS_UPDATED_EVENT,
   type VnStatusConfig,
 } from "@/lib/vn-status-region";
+import { VnRoundReview } from "./vn-round-review";
+import { VnMapView } from "./vn-map";
+import { VnGenerationSettings } from "./vn-generation-settings";
 import { VnStatusFloat } from "./vn-status-float";
 import { VnStatusSettings } from "./vn-status-settings";
 
@@ -58,7 +62,7 @@ function tagFramesWithMessage(frames: VnFrame[], message: VnMessage, statusText?
     sourceFrameIndex: index,
     sourceRole: message.role,
     sourceCreatedAt: message.createdAt,
-    statusText: statusText ?? message.statusRaw,
+    statusText: statusText || message.statusRaw,
     voiceAudio: message.frameAudio?.[index],
   }));
 }
@@ -102,6 +106,8 @@ export function VnPlayer({ characterId, chapterIndex, onClose, onChapterEnd, vnT
   const [currentSprite, setCurrentSprite] = useState("");
   const [hideDialogue, setHideDialogue] = useState(false);
   const [autoMode, setAutoMode] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [roundReviewOpen, setRoundReviewOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [waitingForInput, setWaitingForInput] = useState(false);
   const [currentOptions, setCurrentOptions] = useState<VnOptions | null>(null);
@@ -330,6 +336,16 @@ export function VnPlayer({ characterId, chapterIndex, onClose, onChapterEnd, vnT
     return () => { cancelled = true; };
   }, [session.id, chapterIndex, availableScenes, characterId]);
 
+  useEffect(() => {
+    const scenes = [...new Set(allFrames.map(f => f.bg).filter((v): v is string => Boolean(v && !assetMap[v])))];
+    const sprites = [...new Set(allFrames.map(f => f.sprite).filter((v): v is string => Boolean(v && !assetMap[v])))];
+    if (!scenes.length && !sprites.length) return;
+    let cancelled = false;
+    void Promise.all([resolveVnAssetMap(scenes, "scene", characterId), resolveVnAssetMap(sprites, "sprite", characterId)])
+      .then(([backgrounds, characters]) => { if (!cancelled) setAssetMap(current => ({ ...current, ...backgrounds, ...characters })); });
+    return () => { cancelled = true; };
+  }, [allFrames, characterId]);
+
   // ── Resolve asset name to CSS background ──
   const resolveSceneBg = useCallback((name: string | undefined, useImage = true): React.CSSProperties => {
     if (!name) return {};
@@ -550,11 +566,12 @@ export function VnPlayer({ characterId, chapterIndex, onClose, onChapterEnd, vnT
 
   // ── Auto Mode ──
   useEffect(() => {
+    if (roundReviewOpen || settingsOpen || showScenePicker) return;
     if (autoMode && !isTyping && !showArchiveConfirm && !waitingForInput) {
       autoRef.current = setTimeout(() => advance(), 2000);
     }
     return () => { if (autoRef.current) clearTimeout(autoRef.current); };
-  }, [autoMode, isTyping, showArchiveConfirm, waitingForInput, advance]);
+  }, [autoMode, isTyping, showArchiveConfirm, waitingForInput, advance, roundReviewOpen, settingsOpen, showScenePicker]);
 
   // ── 漫卷自动记忆：每轮计数并触发统一长期总结。每轮的 <summary> 已经
   // roundSummary 字段实时投影进短期记忆，不依赖归档或阈值。──
@@ -584,6 +601,14 @@ export function VnPlayer({ characterId, chapterIndex, onClose, onChapterEnd, vnT
   }, []);
 
   // ── Submit user input ──
+  const commitPreviousRound = async () => {
+    const previous = [...loadVnMessagesForChapter(session.id, chapterIndex)].reverse().find(m => m.role === "assistant");
+    if (previous && !previous.memoryCommitted) {
+      await saveVnMessageRevision(previous.id, { memoryCommitted: true });
+      void afterVnGeneration(characterId);
+    }
+  };
+
   const handleSubmit = useCallback(async (text: string, type: "dialogue" | "narration" | "choice") => {
     if (!text.trim() || isGenerating) return;
 
@@ -593,6 +618,7 @@ export function VnPlayer({ characterId, chapterIndex, onClose, onChapterEnd, vnT
 
     // Package and save user message
     const packaged = packageUserInput(text.trim(), type, { speaker: userName });
+    try { await commitPreviousRound(); } catch { setIsGenerating(false); setWaitingForInput(true); alert("保存当前轮次失败，请重试。原内容已保留。"); return; }
     const userMsg = pushVnMessage({
       sessionId: session.id,
       role: "user",
@@ -670,7 +696,7 @@ export function VnPlayer({ characterId, chapterIndex, onClose, onChapterEnd, vnT
         setWaitingForInput(true);
       }
       // 漫卷自动记忆：计数 + 达到阈值时滚动总结/统一总结（后台执行，不阻塞生成）
-      void afterVnGeneration(characterId);
+      // The adopted round is committed when continuing or archiving, so rerolls cannot pollute memory.
     } catch (err) {
       console.error("VN generation error:", err);
       setWaitingForInput(true);
@@ -723,6 +749,7 @@ export function VnPlayer({ characterId, chapterIndex, onClose, onChapterEnd, vnT
     setWaitingForInput(false);
     setCurrentOptions(null);
 
+    try { await commitPreviousRound(); } catch { setIsGenerating(false); setWaitingForInput(true); alert("保存当前轮次失败，请重试。原内容已保留。"); return; }
     const userMsg = pushVnMessage({
       sessionId: session.id,
       role: "user",
@@ -788,7 +815,7 @@ export function VnPlayer({ characterId, chapterIndex, onClose, onChapterEnd, vnT
         setWaitingForInput(true);
       }
       // 漫卷自动记忆：计数 + 达到阈值时滚动总结/统一总结（后台执行，不阻塞生成）
-      void afterVnGeneration(characterId);
+      // The adopted round is committed when continuing or archiving, so rerolls cannot pollute memory.
     } catch (err) {
       console.error("VN generation error:", err);
       setWaitingForInput(true);
@@ -1019,7 +1046,7 @@ export function VnPlayer({ characterId, chapterIndex, onClose, onChapterEnd, vnT
 
   // ── Derived ──
   const history = allFrames.slice(0, frameIdx + 1);
-  const historyMessages = useMemo(() => loadVnMessagesForChapter(session.id, chapterIndex), [session.id, chapterIndex, allFrames.length]); // re-derive when frames change
+  const historyMessages = useMemo(() => loadVnMessagesForChapter(session.id, chapterIndex), [session.id, chapterIndex, allFrames]); // revisions can keep the same frame count
   const isNarration = !frame?.speaker;
   const renderedSceneUrl = renderedScene ? assetMap[renderedScene] : "";
   const canUseRenderedSceneImage = renderedSceneUrl ? assetLoadStatus[renderedSceneUrl] === "ready" : true;
@@ -1078,7 +1105,7 @@ export function VnPlayer({ characterId, chapterIndex, onClose, onChapterEnd, vnT
 
   return (
     <div className="vn-shell" ref={vnShellRef} data-vn-theme={vnTheme || "default"} onClick={() => {
-      if (historyOpen || showArchiveConfirm || showReplayConfirm || showScenePicker || showBeatsPanel) return;
+      if (settingsOpen || roundReviewOpen || historyOpen || showArchiveConfirm || showReplayConfirm || showScenePicker || showBeatsPanel) return;
       if (isReplaying) { advanceReplay(); return; }
       if (waitingForInput && !isArchived) { setWaitingForInput(false); return; }
       if (!hideDialogue) advance();
@@ -1146,8 +1173,8 @@ export function VnPlayer({ characterId, chapterIndex, onClose, onChapterEnd, vnT
               <MapPin size={18} />
             </button>
           )}
-          <button className="vn-topbar-btn" onClick={() => setStatusSettingsOpen(true)} title="状态浮窗">
-            <Eye size={18} />
+          <button className="vn-topbar-btn" onClick={() => setSettingsOpen(true)} title="漫卷设置">
+            <Settings2 size={18} />
           </button>
           <button className="vn-topbar-btn" onClick={() => setHistoryOpen(true)} title="回顾">
             <Clock size={18} />
@@ -1160,17 +1187,6 @@ export function VnPlayer({ characterId, chapterIndex, onClose, onChapterEnd, vnT
         </div>
         </div>
       </div>
-
-      {isVnStatusActive(statusConfig) && statusVisible ? (
-        <VnStatusFloat
-          characterId={characterId}
-          config={statusConfig}
-          raw={currentStatusRaw}
-          containerRef={vnShellRef}
-          onSettings={() => setStatusSettingsOpen(true)}
-          onHide={() => setStatusVisible(false)}
-        />
-      ) : null}
 
       {statusSettingsOpen ? (
         <VnStatusSettings
@@ -1305,11 +1321,22 @@ export function VnPlayer({ characterId, chapterIndex, onClose, onChapterEnd, vnT
               </>
             )}
           </div>
+      {isVnStatusActive(statusConfig) && statusVisible ? (
+        <VnStatusFloat
+          characterId={characterId}
+          config={statusConfig}
+          raw={currentStatusRaw}
+          containerRef={vnShellRef}
+          onSettings={() => setStatusSettingsOpen(true)}
+          onHide={() => setStatusVisible(false)}
+        />
+      ) : null}
+
         </div>
       )}
 
       {/* ── Control Bar ── */}
-      {!showArchiveConfirm && !waitingForInput && !isReplaying && (
+      {!showArchiveConfirm && !isReplaying && (
         <div className="vn-controls" onClick={(e) => e.stopPropagation()}>
           <button className="vn-ctrl-btn" onClick={() => setHideDialogue(!hideDialogue)} data-active={hideDialogue ? "true" : undefined} title="隐藏">
             {hideDialogue ? <Eye size={15} /> : <EyeOff size={15} />}
@@ -1327,6 +1354,7 @@ export function VnPlayer({ characterId, chapterIndex, onClose, onChapterEnd, vnT
           >
             <Volume2 size={15} />
           </button>
+          <button className="vn-ctrl-btn" disabled={isGenerating} onClick={() => setRoundReviewOpen(true)} title="本轮回顾" aria-label="本轮回顾"><BookOpen size={15}/></button>
           <button className="vn-ctrl-btn" onClick={() => setShowReplayConfirm(true)} title="回放">
             <RotateCcw size={15} />
           </button>
@@ -1422,31 +1450,11 @@ export function VnPlayer({ characterId, chapterIndex, onClose, onChapterEnd, vnT
       )}
 
       {/* ── Scene Picker Panel ── */}
-      {showScenePicker && (
-        <div className="vn-history-overlay" onClick={() => setShowScenePicker(false)}>
-          <div className="vn-scene-picker" onClick={(e) => e.stopPropagation()}>
-            <button className="vn-history-close" onClick={() => setShowScenePicker(false)}>
-              <ArrowRight size={16} />
-            </button>
-            <div className="vn-scene-picker-title">切换场景</div>
-            {availableScenes.length === 0 ? (
-              <div className="vn-scene-picker-empty">暂无场景，请在资源库中上传</div>
-            ) : (
-              availableScenes.map((scene) => (
-                <button
-                  key={scene.id}
-                  className="vn-scene-picker-item"
-                  data-active={currentScene === scene.name ? "true" : undefined}
-                  onClick={() => handleSceneSwitch(scene.name)}
-                >
-                  <div className="vn-scene-picker-dot" />
-                  <span className="vn-scene-picker-name">{scene.name}</span>
-                </button>
-              ))
-            )}
-          </div>
-        </div>
-      )}
+      {showScenePicker && <VnMapView characterId={characterId} onClose={() => setShowScenePicker(false)}
+        onChoose={name => { handleSceneSwitch(name); setShowScenePicker(false); }} />}
+      {roundReviewOpen && <VnRoundReview characterId={characterId} sessionId={session.id} chapterIndex={chapterIndex} onClose={() => setRoundReviewOpen(false)} onAdopt={() => { rebuildFrames(); const latest = [...loadVnMessagesForChapter(session.id, chapterIndex)].reverse().find(m => m.role === "assistant"); const parsed = latest ? parseVnResponse(latest.rawContent) : null; setCurrentOptions(parsed?.options ?? null); setWaitingForInput(true); }} />}
+      {settingsOpen && <VnGenerationSettings characterId={characterId} onClose={() => setSettingsOpen(false)}
+        onStatus={() => { setSettingsOpen(false); setStatusSettingsOpen(true); }} />}
 
       {/* ── Beats Panel ── */}
       {showBeatsPanel && (
@@ -1564,6 +1572,7 @@ export function VnPlayer({ characterId, chapterIndex, onClose, onChapterEnd, vnT
                   void (async () => {
                     try {
                       if (chapterMessages.length === 0) return;
+                      try { await commitPreviousRound(); } catch { setIsGenerating(false); setWaitingForInput(true); alert("保存当前轮次失败，请重试。原内容已保留。"); return; }
                       const summary = await summarizeVnChapter(characterId, chapterMessages);
                       updateChapterSummary(session.id, chapterIndex, summary, {
                         inMemory: writeChapterSummaryToMemory,

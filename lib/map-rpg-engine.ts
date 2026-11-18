@@ -1383,7 +1383,7 @@ export function executeAgentAction(
 ): { agent: CharacterAgent; journalText: string; userMessage?: string } {
   const nodeName = (id: string) => allNodes.find(n => n.id === id)?.name || id;
   const now = formatGameTime(gameDay, gameTime);
-  const updated = { ...agent };
+  let updated = { ...agent };
   let journalText = "";
   let userMessage: string | undefined;
 

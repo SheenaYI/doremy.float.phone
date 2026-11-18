@@ -11,6 +11,7 @@ export type ThemeAssetType =
   | "bg"
   | "chat_bg"
   | "sticker"
+  | "vn_map"
   | "vn_scene"
   | "vn_sprite";
 

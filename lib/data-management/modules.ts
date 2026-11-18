@@ -257,8 +257,6 @@ const PRIMARY_DATA_MODULES: DataModuleDefinition[] = [
           "ai_phone_calendar_holiday_config_v1",
           "ai_phone_calendar_holiday_cache_v1",
           "ai_phone_diary_entries_v1",
-          "ai_phone_photo_wall_v1",
-          "ai_phone_watch_together_v1",
           "ai_phone_diary_entry_timer_settings_v1",
           "ai_phone_diary_entry_font_asset_v1",
           "ai_phone_diary_entry_font_scale_v1",
@@ -354,6 +352,8 @@ const PRIMARY_DATA_MODULES: DataModuleDefinition[] = [
         type: "kv",
         label: "创作玩法配置",
         keys: [
+          "ai_phone_vn_maps_v1",
+          "ai_phone_vn_generation_preferences_v1",
           "ai_phone_vn_scenes_v1",
           "ai_phone_vn_sprites_v1",
           "ai_phone_vn_status_region_v1",

@@ -343,12 +343,12 @@ export function GroupCallScreen({ type, session, characters, onEnd, initiator = 
                 autoChatNotifyRef.current?.assistantSpoke(true);
                 setCallState("IDLE");
             }
-        } catch (error: unknown) {
+        } catch (error: any) {
             console.error("[GroupCall] Error:", error);
             if (stateRef.current !== "ENDED") {
                 setSubtitles(prev => [...prev, {
                     id: `err-${Date.now()}`, role: "assistant",
-                    text: `⚠️ ${error instanceof Error ? error.message : String(error)}`,
+                    text: `⚠️ ${error?.message || "发送失败"}`,
                 }]);
                 autoChatNotifyRef.current?.assistantSpoke(false);
                 setCallState("IDLE");

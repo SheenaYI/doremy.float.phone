@@ -80,7 +80,12 @@ export type VnSession = {
   layoutPrefs?: VnLayoutPrefs;
 };
 
+export type VnVariant = { id: string; rawContent: string; roundSummary?: string; statusRaw?: string; directorPrompt?: string; createdAt: string };
+
 export type VnMessage = {
+  variants?: VnVariant[];
+  selectedVariantId?: string;
+  memoryCommitted?: boolean;
   id: string;
   sessionId: string;
   role: "user" | "assistant" | "system";

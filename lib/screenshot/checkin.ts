@@ -18,8 +18,6 @@ type CheckInBridgeLike = {
   stopCheckIn?: () => void;
   requestCheckIn?: (characterId: string, name: string, avatar: string) => void;
   getCheckInDiagnostics?: () => string;
-  getDiagnosticsSnapshot?: () => string;
-  openAccessibilitySettings?: () => void;
   consumePendingUserShot?: () => string;
   setScreenshotShareTargets?: (json: string) => boolean;
   getScreenshotShareTargets?: () => string;
@@ -136,15 +134,7 @@ export function readCheckInDiagnostics(): CheckInDiagnostics | null {
     const raw = bridge()?.getCheckInDiagnostics?.();
     if (!raw) return null;
     const parsed = JSON.parse(raw) as CheckInDiagnostics;
-    if (!parsed || typeof parsed !== "object") return null;
-    try {
-      const snapshotRaw = bridge()?.getDiagnosticsSnapshot?.();
-      if (snapshotRaw) {
-        const snapshot = JSON.parse(snapshotRaw) as { permissions?: { accessibility?: boolean } };
-        if (typeof snapshot.permissions?.accessibility === "boolean") parsed.systemAccessibilityEnabled = snapshot.permissions.accessibility;
-      }
-    } catch { /* older shell versions may not expose the system permission snapshot */ }
-    return parsed;
+    return parsed && typeof parsed === "object" ? parsed : null;
   } catch {
     return null;
   }
@@ -154,11 +144,6 @@ export function readCheckInDiagnostics(): CheckInDiagnostics | null {
  * 预热查岗服务。用户开启任一角色的查岗时（App 在前台）调用一次。
  * 返回是否成功发起；false 多半是没给浮窗权限。
  */
-/** Open Android's Accessibility settings so the user can reconnect the service. */
-export function openNativeAccessibilitySettings(): void {
-  try { bridge()?.openAccessibilitySettings?.(); } catch { /* best effort */ }
-}
-
 export function prepareCheckInService(): boolean {
   try {
     return bridge()?.prepareCheckIn?.() === true;
@@ -202,20 +187,21 @@ export function requestCheckIn(
     }
 
     let settled = false;
-    const cleanup: { timer?: ReturnType<typeof setTimeout>; unsubscribe?: () => void } = {};
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let unsubscribe: (() => void) | undefined;
 
     // 用户随口说的那句话（同意/拒绝都可能有），统一在下面几处带进结果里。
     const finish = (result: CheckInOutcome) => {
       if (settled) return;
       settled = true;
-      if (cleanup.timer) clearTimeout(cleanup.timer);
-      cleanup.unsubscribe?.();
+      if (timer) clearTimeout(timer);
+      unsubscribe?.();
       resolve(result);
     };
 
     // 先订阅、再请求：浮层若很快出结果，反过来会漏掉事件。
     ensureShellOverlayListener();
-    cleanup.unsubscribe = subscribeShellOverlayEvents((event) => {
+    unsubscribe = subscribeShellOverlayEvents((event) => {
       if (event.action !== "checkIn") return;
       // 同一时刻可能只有一次查岗，但仍按 characterId 校验，避免张冠李戴
       if (event.characterId && event.characterId !== characterId) return;
@@ -233,7 +219,7 @@ export function requestCheckIn(
       finish({ accepted: false, reason: event.reason || "user_rejected", reply });
     });
 
-    cleanup.timer = setTimeout(() => {
+    timer = setTimeout(() => {
       finish({ accepted: false, reason: "timeout" });
     }, Math.max(1000, timeoutMs));
 

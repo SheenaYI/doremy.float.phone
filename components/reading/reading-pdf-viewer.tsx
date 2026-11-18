@@ -1,7 +1,5 @@
 "use client";
 
-import type { PdfJsDocument, PdfJsLibrary } from "@/lib/pdfjs-types";
-
 import { useState, useEffect, useRef, useCallback } from "react";
 import { loadRawFileBlob } from "@/lib/reading-storage";
 import { splitBilingualText } from "@/lib/bilingual-text";
@@ -34,18 +32,17 @@ const PDFJS_CDN = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${PDFJS_VERSION
 const PRELOAD_ROOT_MARGIN = "1800px 0px";
 /** 渲染并发上限：预加载页多时限制同时光栅化的页数，避免一次把主线程塞满导致卡顿 */
 const MAX_CONCURRENT_RENDERS = 2;
-let _pdfjsPromise: Promise<PdfJsLibrary> | null = null;
+let _pdfjsPromise: Promise<any> | null = null;
 
-function loadPdfjs(): Promise<PdfJsLibrary> {
+function loadPdfjs(): Promise<any> {
     if (_pdfjsPromise) return _pdfjsPromise;
     _pdfjsPromise = new Promise((resolve, reject) => {
-        const existing = (window as Window & { pdfjsLib?: PdfJsLibrary }).pdfjsLib;
-        if (existing) { resolve(existing); return; }
+        if ((window as any).pdfjsLib) { resolve((window as any).pdfjsLib); return; }
         const script = document.createElement("script");
         script.src = `${PDFJS_CDN}/pdf.min.js`;
         script.type = "text/javascript";
         script.onload = () => {
-            const lib = (window as Window & { pdfjsLib?: PdfJsLibrary }).pdfjsLib;
+            const lib = (window as any).pdfjsLib;
             if (lib) {
                 lib.GlobalWorkerOptions.workerSrc = `${PDFJS_CDN}/pdf.worker.min.js`;
                 resolve(lib);
@@ -75,7 +72,7 @@ export function PdfPageRenderer({
 }: Props) {
     const canvasContainerRef = useRef<HTMLDivElement>(null);
     const wrapperRef = useRef<HTMLDivElement>(null);
-    const pdfDocRef = useRef<PdfJsDocument | null>(null);
+    const pdfDocRef = useRef<any | null>(null);
     const observerRef = useRef<IntersectionObserver | null>(null);
     const renderSeqRef = useRef(0);
     /** 正在光栅化的页数（并发限流用） */
@@ -84,7 +81,7 @@ export function PdfPageRenderer({
     const [loading, setLoading] = useState(true);
     const [docVersion, setDocVersion] = useState(0);
     /** 上一次完成渲染的 pdf 文档对象：换书（docVersion 变化）时旧 canvas 一律不复用，防止串书 */
-    const renderedPdfRef = useRef<PdfJsDocument | null>(null);
+    const renderedPdfRef = useRef<any | null>(null);
     const scaleRef = useRef(1);
     const [scale, setScale] = useState(1);
     const renderedPagesRef = useRef(new Set<number>());

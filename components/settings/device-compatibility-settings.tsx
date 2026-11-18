@@ -252,7 +252,7 @@ export function DeviceCompatibilitySettings({ onNotice }: { onNotice?: (message:
 
     <section style={panelStyle}>
       <div><strong style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14 }}><Wrench size={17} />屏幕布局调整</strong>
-        <p style={{ fontSize: 12, lineHeight: 1.6, opacity: .72, margin: "6px 0 0" }}>自动模式使用当前设备的可用视口。手动模式可输入参考分辨率，适合遇到边缘裁切、内容过大或比例不一致时试调。系统报告值通常是逻辑像素；若填物理分辨率，请选择物理像素并由 DPR 自动换算。它不会改变 Android 系统真实分辨率。顶部状态栏错位时，可在「桌面 → 主题 → 状态栏」调整顶部偏移和状态栏占位上移。</p>
+        <p style={{ fontSize: 12, lineHeight: 1.6, opacity: .72, margin: "6px 0 0" }}>裁切或比例异常时可手动调整。物理像素会按 DPR 换算；设置仅影响网页布局。</p>
       </div>
       <label style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, fontSize: 13 }}>
         <span>布局模式</span>
@@ -289,7 +289,7 @@ export function DeviceCompatibilitySettings({ onNotice }: { onNotice?: (message:
     </section>
 
     <section style={panelStyle}>
-      <div><strong style={{ fontSize: 14 }}>原生接口兼容性与模块开关</strong><p style={{ fontSize: 12, lineHeight: 1.6, opacity: .72, margin: "6px 0 0" }}>逐项检测当前 APK 是否提供对应接口。可停用不稳定模块；打开开关只代表允许使用，不会自动授予系统权限，也不能给旧 APK 补出缺失接口。</p></div>
+      <div><strong style={{ fontSize: 14 }}>原生接口兼容性与模块开关</strong><p style={{ fontSize: 12, lineHeight: 1.6, opacity: .72, margin: "6px 0 0" }}>可停用不稳定接口。允许使用不代表已获得系统权限。</p></div>
       <div style={{ display: "grid", gap: 9 }}>
         {FEATURE_ROWS.map((row) => {
           const supported = row.supported(native);
@@ -302,7 +302,6 @@ export function DeviceCompatibilitySettings({ onNotice }: { onNotice?: (message:
                 <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 10, color: supported && !probeFailed ? "#16a34a" : "#d97706" }}>{supported && !probeFailed ? <CheckCircle2 size={12} /> : <XCircle size={12} />}{supported ? (probeFailed ? "接口存在但调用失败" : "检测到接口") : "未检测到接口"}</span>
               </div>
               <p style={{ fontSize: 11, lineHeight: 1.55, opacity: .72, margin: "5px 0 0" }}>{row.description}</p>
-              {!supported && <p style={{ fontSize: 11, lineHeight: 1.5, color: "#d97706", margin: "4px 0 0" }}>此能力在当前环境可能不可用；请检查 APK 版本、系统权限或改用浏览器替代功能。</p>}
               {supported && probeFailed && <p style={{ fontSize: 11, lineHeight: 1.5, color: "#d97706", margin: "4px 0 0" }}>接口存在，但实际读取失败（可能是原生桥 Java exception、权限或服务未启动）。请查看下方原始快照。</p>}
               {!supported && row.id === "notifications" && typeof window !== "undefined" && "Notification" in window && <p style={{ fontSize: 11, lineHeight: 1.5, opacity: .72, margin: "4px 0 0" }}>未检测到 AndroidShell.notify；当前浏览器有 Notification API，可尝试使用浏览器通知作为替代。</p>}
               {supported && row.id === "notifications" && (nativeSnapshot?.permissions as Record<string, unknown> | undefined)?.notifications === false && <p style={{ fontSize: 11, lineHeight: 1.5, color: "#d97706", margin: "4px 0 0" }}>接口存在，但系统通知权限未开启；请到 Android 应用设置中允许通知。</p>}
@@ -326,7 +325,7 @@ export function DeviceCompatibilitySettings({ onNotice }: { onNotice?: (message:
         <summary style={{ cursor: "pointer", padding: "6px 0" }}>展开原生接口能力快照（只读检测）</summary>
         <pre style={{ marginTop: 8, padding: 10, borderRadius: 10, overflowX: "auto", whiteSpace: "pre-wrap", overflowWrap: "anywhere", background: "var(--surface-secondary, rgba(128,128,128,.06))", fontSize: 10, lineHeight: 1.5 }}>{JSON.stringify(apiSnapshots, null, 2)}</pre>
       </details>}
-      <textarea readOnly value={report} aria-label="兼容性诊断报告" style={{ ...inputStyle, minHeight: 190, resize: "vertical", fontSize: 11, lineHeight: 1.5, whiteSpace: "pre-wrap" }} />
+      <details><summary>查看完整报告</summary><textarea readOnly value={report} aria-label="兼容性诊断报告" style={{ ...inputStyle, minHeight: 190, resize: "vertical", fontSize: 11, lineHeight: 1.5, whiteSpace: "pre-wrap" }} /></details>
     </section>
   </div>;
 }

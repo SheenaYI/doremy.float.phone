@@ -1,3 +1,5 @@
+import { measureAsync } from "./performance-diagnostics";
+import { buildVnGenerationInstruction } from "./vn-generation-preferences";
 import { loadCharacters } from "./character-storage";
 import {
   loadBindingConfig,
@@ -29,7 +31,6 @@ import type { ChatMessage } from "./chat-storage";
 import type { VnFrame, VnOptions } from "./vn-types";
 import { simpleLLMCall } from "./api-helpers";
 import { buildVnStatusInstruction, getVnStatusConfig, isVnStatusActive } from "./vn-status-region";
-import { recordPerformanceMetric } from "./performance-diagnostics";
 
 const VN_RAW_HISTORY_LIMIT = 40;
 const VN_RECAP_ROUND_LIMIT = 12;
@@ -108,7 +109,7 @@ export function resolveVnConfigs(characterId: string): {
 export async function generateVnCompletion(
   characterId: string,
   history: VnMessage[],
-  options?: { chapterIndex?: number }
+  options?: { chapterIndex?: number; directorPrompt?: string }
 ): Promise<VnGenerationResult> {
   const character = loadCharacters().find((c) => c.id === characterId);
   if (!character) {
@@ -116,8 +117,9 @@ export async function generateVnCompletion(
   }
 
   const { apiConfig, preset, regexes, worldBooks } = resolveVnConfigs(characterId);
-  const llmMessages = await buildVnPromptMessages(characterId, history, preset, regexes, worldBooks, options?.chapterIndex);
+  const llmMessages = await measureAsync("prompt.vn.total", () => buildVnPromptMessages(characterId, history, preset, regexes, worldBooks, options?.chapterIndex));
 
+  if (options?.directorPrompt?.trim()) llmMessages.push({ role: "system", content: `本轮导演要求（保留输出结构）：\n${options.directorPrompt.trim()}` });
   const rawOutput = await sendLLMRequest(apiConfig, preset, llmMessages, regexes, {
     characterName: character.name,
   }, {
@@ -146,7 +148,6 @@ async function buildVnPromptMessages(
   worldBooks: WorldBookConfig[],
   chapterIndex?: number
 ): Promise<LLMMessage[]> {
-  const promptBuildStartedAt = typeof performance !== "undefined" ? performance.now() : Date.now();
   const character = loadCharacters().find((c) => c.id === characterId);
   if (!character) {
     throw new ChatEngineError(`Character not found: ${characterId}`);
@@ -167,7 +168,6 @@ async function buildVnPromptMessages(
     "vn",
     { userName: userIdentity?.name ?? "用户", history: historyMessages }
   );
-  const promptContextDoneAt = typeof performance !== "undefined" ? performance.now() : Date.now();
 
   const compact = (text: string, max: number) => {
     const plain = text.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
@@ -229,7 +229,6 @@ async function buildVnPromptMessages(
     retrieveCoreMemoriesForPrompt(characterId, memConfig).catch(() => null),
   ]);
 
-  const promptAssembleStartedAt = typeof performance !== "undefined" ? performance.now() : Date.now();
   const promptMessages = assemblePromptPayload({
     character,
     history: truncatedHistory,
@@ -255,20 +254,12 @@ async function buildVnPromptMessages(
       return { vnBeats: beatsList, vnCurrentBeat: currentBeat };
     })(),
   });
-  const promptBuildDoneAt = typeof performance !== "undefined" ? performance.now() : Date.now();
-  recordPerformanceMetric("prompt.vn.build", promptBuildDoneAt - promptBuildStartedAt, {
-    contextMs: Math.round(promptContextDoneAt - promptBuildStartedAt),
-    memoryMs: Math.round(promptAssembleStartedAt - promptContextDoneAt),
-    assembleMs: Math.round(promptBuildDoneAt - promptAssembleStartedAt),
-    historyMessages: truncatedHistory.length,
-    recentItems: unifiedRecentItems.length,
-    recapChars: recap.length,
-    promptMessages: promptMessages.length,
-  });
   const statusConfig = getVnStatusConfig(characterId);
   if (isVnStatusActive(statusConfig)) {
     promptMessages.push({ role: "system", content: buildVnStatusInstruction(statusConfig) });
   }
+  const preferences = buildVnGenerationInstruction(characterId);
+  if (preferences) promptMessages.push({ role: "system", content: `漫卷生成偏好（保留预设要求的输出结构）：\n${preferences}` });
   return promptMessages;
 }
 
@@ -289,7 +280,7 @@ export async function previewVnPromptPayload(
     throw new ChatEngineError(`Character not found: ${characterId}`);
   }
   const { apiConfig, preset, regexes, worldBooks } = resolveVnConfigs(characterId);
-  const llmMessages = await buildVnPromptMessages(characterId, history, preset, regexes, worldBooks, options?.chapterIndex);
+  const llmMessages = await measureAsync("prompt.vn.total", () => buildVnPromptMessages(characterId, history, preset, regexes, worldBooks, options?.chapterIndex));
   return {
     messages: previewMessagesForApi(apiConfig, preset, llmMessages),
     characterName: character.name,

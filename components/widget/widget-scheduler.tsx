@@ -38,7 +38,7 @@ const EMPTY_WIDGET_TEXT = "还没有留下话";
 export function pushWidgetToNative(): boolean {
   const config = loadWidgetConfig();
   if (!config.enabled) return false;
-  const stored = loadWidgetData();
+  const stored = loadWidgetData(config.characterId);
   // 没内容也照推一份占位：桌面先把模板显示出来，等角色留了话自然就换上了。
   const target = stored ?? {
     characterId: config.characterId,
@@ -83,15 +83,9 @@ export function WidgetScheduler() {
       try {
         await hydrateKvDb();
         const config = loadWidgetConfig();
-        if (config.enabled) {
-          let contentChanged = false;
-          if (config.autoEnabled) {
-            contentChanged = await runWidgetAutoGenerate();
-            if (contentChanged) pushWidgetToNative();
-          }
-          // Keep virtual time/current activity fresh even when the character's message is unchanged.
-          // runWidgetAutoGenerate emits the normal update event when content changes.
-          if (!contentChanged) pushWidgetToNative();
+        if (config.enabled && config.autoEnabled) {
+          const changed = await runWidgetAutoGenerate();
+          if (changed) pushWidgetToNative();
         }
       } catch (err) {
         console.warn("[Widget] 调度失败", err);
@@ -115,18 +109,13 @@ export function WidgetScheduler() {
 
     // 内容一变立刻推：角色刚用工具留了话，桌面应该马上变，不该等下一轮检查
     const onUpdated = () => { pushWidgetToNative(); };
-    const onLifeUpdated = () => { pushWidgetToNative(); };
     window.addEventListener(WIDGET_UPDATED_EVENT, onUpdated);
-    // The native widget shares the same virtual-life source as the Life app.
-    // A location, activity, clock or schedule change refreshes its rendered card immediately.
-    window.addEventListener("virtual-life-state-updated", onLifeUpdated);
 
     return () => {
       disposed = true;
       cancelStart();
       if (cancelTimer) cancelTimer();
       window.removeEventListener(WIDGET_UPDATED_EVENT, onUpdated);
-      window.removeEventListener("virtual-life-state-updated", onLifeUpdated);
     };
   }, []);
 

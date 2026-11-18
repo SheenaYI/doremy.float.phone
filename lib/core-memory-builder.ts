@@ -12,7 +12,6 @@ import {
 import { resolveAuxiliaryApiConfig } from "./settings-storage";
 import { simpleLLMCall } from "./api-helpers";
 import { buildCoreRoomScopeText, resolveCoreMemoryRooms } from "./memory-room";
-import { loadStorySessions, resolveStoryMemorySettings } from "./story-storage";
 
 const coreBuildingSet = new Set<string>();
 
@@ -39,24 +38,12 @@ function formatCoreTimelineForSummarization(
 export async function runCoreMemoryPipeline(
     characterId: string,
     characterName: string,
-    options?: { force?: boolean; additionalSummary?: { content: string; createdAt: string; sourceApp: MemoryEntry["sourceApp"]; sourceSessionIds: string[] } },
+    options?: { force?: boolean },
 ): Promise<{ success: boolean; error?: string; rebuiltCount?: number }> {
     const config = loadMemoryConfig();
-    const storedLongTermEntries = await loadMemoryEntriesByType(characterId, "long_term");
-    const storySessionsById = new Map(loadStorySessions().map((session) => [session.id, session]));
-    // 长期记忆可能汇总多个来源；若一条摘要包含明确禁止写入核心记忆的分线，
-    // 保守地整条排除，避免聚合摘要绕过分线的核心记忆权限。
-    const allLongTermEntries = storedLongTermEntries.filter((entry) => {
-        const sourceIds = Array.isArray(entry.metadata?.sourceSessionIds)
-            ? entry.metadata.sourceSessionIds.map(String)
-            : [];
-        return !sourceIds.some((id) => {
-            const session = storySessionsById.get(id);
-            return Boolean(session && !resolveStoryMemorySettings(session).writeCoreMemory);
-        });
-    });
+    const allLongTermEntries = await loadMemoryEntriesByType(characterId, "long_term");
 
-    if (allLongTermEntries.length === 0 && !options?.additionalSummary?.content.trim()) {
+    if (allLongTermEntries.length === 0) {
         return { success: false, error: "没有可用于总结核心记忆的长期记忆" };
     }
 
@@ -80,17 +67,8 @@ export async function runCoreMemoryPipeline(
             sourceSessionIds: Array.isArray(entry.metadata?.sourceSessionIds)
                 ? entry.metadata.sourceSessionIds.map(String)
                 : [],
-        }));
-    if (options?.additionalSummary?.content.trim()) {
-        entries.push({
-            id: `mem_core_ephemeral_${options.additionalSummary.createdAt}`,
-            timestamp: options.additionalSummary.createdAt,
-            content: options.additionalSummary.content,
-            sourceApp: options.additionalSummary.sourceApp,
-            sourceSessionIds: [...options.additionalSummary.sourceSessionIds],
-        });
-    }
-    entries.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+        }))
+        .sort((a, b) => a.timestamp.localeCompare(b.timestamp));
 
     if (entries.length === 0) {
         if (!options?.force) resetCoreMemoryCounter(characterId);

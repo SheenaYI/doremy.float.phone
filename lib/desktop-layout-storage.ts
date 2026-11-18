@@ -98,6 +98,7 @@ function flowIconsToPositions(icons: DesktopIconId[], occupied?: boolean[][]): I
 
 export function createDefaultDesktopIconLayout(_widgets: WidgetInstance[] = []): DesktopIconLayout {
   return {
+    page4: PAGE_4_DEFAULT.map((id, i) => ({ id, row: 4, col: i + 1 })),
     page1: PAGE_1_DEFAULT.map((id, i) => ({
       id,
       row: 5 + Math.floor(i / GRID_COLS),
@@ -109,17 +110,11 @@ export function createDefaultDesktopIconLayout(_widgets: WidgetInstance[] = []):
       row: 5 + Math.floor(i / GRID_COLS),
       col: (i % GRID_COLS) + 1,
     })),
-    // 第三页：工具类应用仍放在右半区，左半边可留给组件
+    // 第三页：右半边 2×2（第 4~5 行、第 3~4 列），左半边留给日历组件
     page3: PAGE_3_DEFAULT.map((id, i) => ({
       id,
       row: 4 + Math.floor(i / 2),
       col: 3 + (i % 2),
-    })),
-    // 第四页：新生活应用独立成页，留出足够间距，不与旧图标/桌面组件重叠
-    page4: PAGE_4_DEFAULT.map((id, i) => ({
-      id,
-      row: 3 + Math.floor(i / 2),
-      col: 2 + (i % 2),
     })),
   } as DesktopIconLayout;
 }

@@ -80,6 +80,7 @@ export type ShellOverlayEvent = {
 export const SHELL_OVERLAY_EVENT = "shell-call-overlay";
 
 function bridge(): ShellBridgeLike | null {
+  if (!isCompatibilityFeatureEnabled("callOverlay")) return null;
     if (typeof window === "undefined") return null;
     const candidate = (window as unknown as { AndroidShell?: ShellBridgeLike }).AndroidShell;
     return candidate && typeof candidate === "object" ? candidate : null;
@@ -92,23 +93,17 @@ export function isShellEnvironment(): boolean {
 
 /** 壳是否支持通话浮窗（老版本 APK 没有这些方法） */
 export function supportsCallOverlay(): boolean {
-    if (!isCompatibilityFeatureEnabled("callOverlay")) return false;
-
     const b = bridge();
     return !!b && typeof b.startCallOverlay === "function";
 }
 
 /** 浮窗权限是否已授予（非壳环境恒为 false） */
 export function canDrawOverlay(): boolean {
-    if (!isCompatibilityFeatureEnabled("callOverlay")) return false;
-
     return !!bridge()?.canDrawOverlay?.();
 }
 
 /** 跳到系统「显示在其他应用上层」授权页 */
 export function requestOverlayPermission(): void {
-    if (!isCompatibilityFeatureEnabled("callOverlay")) return;
-
     bridge()?.requestOverlayPermission?.();
 }
 
@@ -132,7 +127,6 @@ export function startShellCallOverlay(params: {
      *  否则原生从 0 起数，和网页计时两套并行、时长对不上。 */
     elapsedSeconds?: number;
 }): boolean {
-    if (!isCompatibilityFeatureEnabled("callOverlay")) return false;
     const b = bridge();
     if (!b?.startCallOverlay) return false;
     try {
@@ -155,7 +149,6 @@ export function updateShellCallOverlay(params: {
     meta?: string[];
     elapsedSeconds?: number;
 }): void {
-    if (!isCompatibilityFeatureEnabled("callOverlay")) return;
     const b = bridge();
     if (!b?.updateCallOverlay) return;
     try {
@@ -178,8 +171,6 @@ export function updateShellCallOverlay(params: {
  * 老壳没有这个方法，静默忽略。
  */
 export function updateShellCallOverlayPending(count: number): void {
-    if (!isCompatibilityFeatureEnabled("callOverlay")) return;
-
     const b = bridge();
     if (!b?.updateCallOverlayPending) return;
     try {
@@ -197,8 +188,6 @@ export function updateShellCallOverlayPending(count: number): void {
  * 于是浮窗时不时不弹。
  */
 export function showShellCallOverlay(): void {
-    if (!isCompatibilityFeatureEnabled("callOverlay")) return;
-
     const b = bridge();
     if (!b?.showCallOverlay) return;
     try {
@@ -210,8 +199,6 @@ export function showShellCallOverlay(): void {
 
 /** 隐藏浮窗（回到 App 前台时调用）。服务继续运行，下次切出去秒显。 */
 export function hideShellCallOverlay(): void {
-    if (!isCompatibilityFeatureEnabled("callOverlay")) return;
-
     const b = bridge();
     if (!b?.hideCallOverlay) return;
     try {
@@ -223,15 +210,11 @@ export function hideShellCallOverlay(): void {
 
 /** 壳是否支持「预热后显示/隐藏」这套浮窗生命周期（老 APK 没有）。 */
 export function supportsOverlayShowHide(): boolean {
-    if (!isCompatibilityFeatureEnabled("callOverlay")) return false;
-
     return typeof bridge()?.showCallOverlay === "function";
 }
 
 /** 读当前快捷回复条主题键（非壳环境返回空串）。 */
 export function getShellOverlayTheme(): string {
-    if (!isCompatibilityFeatureEnabled("callOverlay")) return "";
-
     try {
         return bridge()?.getOverlayTheme?.() ?? "";
     } catch {
@@ -241,8 +224,6 @@ export function getShellOverlayTheme(): string {
 
 /** 设置快捷回复条主题键；已弹出的回复条会即时换色。 */
 export function setShellOverlayTheme(key: string): void {
-    if (!isCompatibilityFeatureEnabled("callOverlay")) return;
-
     const b = bridge();
     if (!b?.setOverlayTheme) return;
     try {
@@ -254,15 +235,11 @@ export function setShellOverlayTheme(key: string): void {
 
 /** 壳是否支持自定义回复条主题（老 APK 没有）。 */
 export function supportsOverlayTheme(): boolean {
-    if (!isCompatibilityFeatureEnabled("callOverlay")) return false;
-
     return typeof bridge()?.setOverlayTheme === "function";
 }
 
 /** 读壳里存的完整配色 JSON（老 APK 返回空串）。 */
 export function getShellOverlayThemeJson(): string {
-    if (!isCompatibilityFeatureEnabled("callOverlay")) return "";
-
     try {
         return bridge()?.getOverlayThemeJson?.() ?? "";
     } catch {
@@ -272,8 +249,6 @@ export function getShellOverlayThemeJson(): string {
 
 /** 下发完整配色 JSON（预设键 + 自定义覆盖）；已弹出的回复条会即时重绘。 */
 export function setShellOverlayThemeJson(json: string): void {
-    if (!isCompatibilityFeatureEnabled("callOverlay")) return;
-
     const b = bridge();
     if (!b?.setOverlayThemeJson) return;
     try {
@@ -285,8 +260,6 @@ export function setShellOverlayThemeJson(json: string): void {
 
 /** 壳是否支持逐项自定义配色（老 APK 只认主题键）。 */
 export function supportsOverlayCustomColors(): boolean {
-    if (!isCompatibilityFeatureEnabled("callOverlay")) return false;
-
     return typeof bridge()?.setOverlayThemeJson === "function";
 }
 
@@ -309,8 +282,6 @@ export type ShellOverlayDebugInfo = {
 };
 
 export function readShellOverlayDebugInfo(): ShellOverlayDebugInfo | null {
-    if (!isCompatibilityFeatureEnabled("callOverlay")) return null;
-
     try {
         const raw = bridge()?.getOverlayDebugInfo?.();
         if (!raw) return null;

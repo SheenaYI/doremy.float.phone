@@ -1,6 +1,6 @@
 "use client";
-
 import { isCompatibilityFeatureEnabled } from "../device-compatibility";
+
 
 // 系统日历 ↔ 安卓壳的原生桥对接层。
 //
@@ -34,7 +34,8 @@ type CalendarBridgeLike = {
 };
 
 function bridge(): CalendarBridgeLike | null {
-  if (typeof window === "undefined" || !isCompatibilityFeatureEnabled("calendar")) return null;
+  if (!isCompatibilityFeatureEnabled("calendar")) return null;
+  if (typeof window === "undefined") return null;
   const candidate = (window as unknown as { AndroidShell?: CalendarBridgeLike }).AndroidShell;
   return candidate && typeof candidate === "object" ? candidate : null;
 }
@@ -120,8 +121,8 @@ export function insertSystemCalendarEvent(params: {
       params.description ?? "",
     );
     if (raw === undefined) return { ok: false, reason: "当前 App 版本不支持写入日历" };
-    const parsed = JSON.parse(raw) as Record<string, unknown>;
-    if (parsed && parsed.ok === true) return parsed as unknown as SystemCalendarWriteResult;
+    const parsed = JSON.parse(raw) as Partial<SystemCalendarWriteResult> & { reason?: string; needPermission?: string };
+    if (parsed && parsed.ok === true) return parsed as SystemCalendarWriteResult;
     return {
       ok: false,
       reason: typeof parsed?.reason === "string" && parsed.reason ? parsed.reason : "写入日历失败",

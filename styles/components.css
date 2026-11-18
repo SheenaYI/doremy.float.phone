@@ -2369,17 +2369,6 @@
   flex-shrink: 0;
 }
 
-.pv-composition {
-  padding: 6px 14px 0;
-  font-size: calc(10px * var(--app-text-scale, 1));
-  color: var(--c-icon);
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 12px;
-  flex-shrink: 0;
-  opacity: .78;
-}
-
 /* ── Hero Card (large visual card) ── */
 .card-hero {
   display: flex;
@@ -6174,3 +6163,7 @@
   font-size: calc(8.9px * var(--app-text-scale, 1));
   line-height: 1.5;
 }
+
+.diagnostics-sections { display:grid; gap:24px; }
+.diagnostics-sections>section+section { padding-top:18px; border-top:1px solid var(--border, #8885); }
+.app-opening { height:100%; display:grid; place-content:center; color:var(--c-text); font-size:13px; }

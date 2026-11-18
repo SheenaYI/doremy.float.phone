@@ -32,7 +32,8 @@ type ShellNotificationBridge = {
 const MAX_AVATAR_URL_CHARS = 400_000;
 
 function getBridge(): ShellNotificationBridge | null {
-    if (typeof window === "undefined" || !isCompatibilityFeatureEnabled("notifications")) return null;
+  if (!isCompatibilityFeatureEnabled("notifications")) return null;
+    if (typeof window === "undefined") return null;
     const bridge = (window as unknown as { AndroidShell?: ShellNotificationBridge }).AndroidShell;
     return bridge && typeof bridge.notify === "function" ? bridge : null;
 }

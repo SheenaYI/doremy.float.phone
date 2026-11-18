@@ -1,3 +1,4 @@
+import { measureAsync } from "./performance-diagnostics";
 // lib/memory-service.ts
 // High-level memory orchestration: retrieve long-term memories for prompt injection.
 
@@ -7,7 +8,19 @@ import { resolveAuxiliaryApiConfig } from "./settings-storage";
 import { generateEmbedding, resolveEmbeddingModel, cosineSimilarity } from "./memory-embedding";
 import { estimateTokens } from "./token-counter";
 import { MEMORY_ROOMS, resolveRoomBudgets, normalizeRoomFlags } from "./memory-room";
-import { recordPerformanceMetric } from "./performance-diagnostics";
+
+async function yieldMemoryWork(): Promise<void> {
+    await new Promise<void>(resolve => setTimeout(resolve, 0));
+}
+async function rankEmbeddingEntries(entries: MemoryEntry[], query: number[]): Promise<Map<string, number>> {
+    const scores = new Map<string, number>();
+    let started = performance.now();
+    for (const entry of entries) {
+        if (entry.embedding?.length) scores.set(entry.id, cosineSimilarity(query, entry.embedding));
+        if (performance.now() - started >= 8) { await yieldMemoryWork(); started = performance.now(); }
+    }
+    return scores;
+}
 
 /** 单条记忆注入时的固定开销（换行等），与 fillByBudget 保持一致 */
 const ENTRY_OVERHEAD = 4;
@@ -16,9 +29,13 @@ function entryTokens(entry: MemoryEntry): number {
     return estimateTokens(entry.content) + ENTRY_OVERHEAD;
 }
 
-function totalTokens(entries: MemoryEntry[]): number {
+async function totalTokens(entries: MemoryEntry[]): Promise<number> {
     let total = 0;
-    for (const entry of entries) total += entryTokens(entry);
+    let started = performance.now();
+    for (const entry of entries) {
+        total += entryTokens(entry);
+        if (performance.now() - started >= 8) { await yieldMemoryWork(); started = performance.now(); }
+    }
     return total;
 }
 
@@ -35,7 +52,7 @@ function totalTokens(entries: MemoryEntry[]): number {
  *   longTermTokenBudget 仍作为全局硬护栏，超出时从非常驻房间的最低分条目开始剔除。
  * Embedding API is resolved from auxiliary binding (global, not per-character).
  */
-export async function retrieveMemoriesForPrompt(
+async function retrieveMemoriesForPromptImpl(
     characterId: string,
     currentContext: string,
     config: MemoryConfig
@@ -46,7 +63,7 @@ export async function retrieveMemoriesForPrompt(
     const budget = config.longTermTokenBudget;
 
     // Calculate total tokens for all entries
-    const allTokens = totalTokens(longTermEntries);
+    const allTokens = await totalTokens(longTermEntries);
 
     // Strategy 1: all fit within budget → return all
     if (allTokens <= budget) {
@@ -61,18 +78,12 @@ export async function retrieveMemoriesForPrompt(
     // Strategy 2: vector recall enabled + embedding API configured → vector search, fill by relevance
     const embeddingApiConfig = config.vectorRecallEnabled ? resolveAuxiliaryApiConfig("embeddingApiConfigId") : null;
     if (embeddingApiConfig && resolveEmbeddingModel(embeddingApiConfig)) {
-        const embeddingStartedAt = typeof performance !== "undefined" ? performance.now() : Date.now();
         const queryEmbedding = await generateEmbedding(currentContext, embeddingApiConfig);
-        recordPerformanceMetric("prompt.memory.embedding", (typeof performance !== "undefined" ? performance.now() : Date.now()) - embeddingStartedAt, {
-            path: "long_term_vector",
-        });
         if (queryEmbedding) {
             const withEmbeddings = longTermEntries.filter(m => m.embedding && m.embedding.length > 0);
             if (withEmbeddings.length > 0) {
-                const scored = withEmbeddings.map(entry => ({
-                    entry,
-                    score: cosineSimilarity(queryEmbedding, entry.embedding!),
-                }));
+                const scores = await rankEmbeddingEntries(withEmbeddings, queryEmbedding);
+                const scored = withEmbeddings.map(entry => ({ entry, score: scores.get(entry.id) ?? 0 }));
                 scored.sort((a, b) => b.score - a.score);
                 return fillByBudget(scored.map(s => s.entry), budget);
             }
@@ -155,17 +166,9 @@ async function selectByRoomBudget(
     const embeddingApiConfig = config.vectorRecallEnabled ? resolveAuxiliaryApiConfig("embeddingApiConfigId") : null;
     if (embeddingApiConfig && resolveEmbeddingModel(embeddingApiConfig)) {
         try {
-            const embeddingStartedAt = typeof performance !== "undefined" ? performance.now() : Date.now();
             const queryEmbedding = await generateEmbedding(currentContext, embeddingApiConfig);
-            recordPerformanceMetric("prompt.memory.embedding", (typeof performance !== "undefined" ? performance.now() : Date.now()) - embeddingStartedAt, {
-                path: "room_vector",
-            });
             if (queryEmbedding) {
-                const map = new Map<string, number>();
-                for (const entry of entries) {
-                    if (!entry.embedding || entry.embedding.length === 0) continue;
-                    map.set(entry.id, cosineSimilarity(queryEmbedding, entry.embedding));
-                }
+                const map = await rankEmbeddingEntries(entries, queryEmbedding);
                 if (map.size > 0) relevanceById = map;
             }
         } catch {
@@ -243,7 +246,7 @@ function truncateOldestFirst(entries: MemoryEntry[], budget: number): MemoryEntr
     return fillByBudget(sorted, budget);
 }
 
-export async function retrieveCoreMemoriesForPrompt(
+async function retrieveCoreMemoriesForPromptImpl(
     characterId: string,
     config: MemoryConfig,
 ): Promise<MemoryEntry[]> {
@@ -274,3 +277,7 @@ function fillByBudget(entries: MemoryEntry[], budget: number): MemoryEntry[] {
     }
     return result;
 }
+
+export function retrieveMemoriesForPrompt(...args: Parameters<typeof retrieveMemoriesForPromptImpl>): ReturnType<typeof retrieveMemoriesForPromptImpl> { return measureAsync("prompt.memory.long_term", () => retrieveMemoriesForPromptImpl(...args)); }
+
+export function retrieveCoreMemoriesForPrompt(...args: Parameters<typeof retrieveCoreMemoriesForPromptImpl>): ReturnType<typeof retrieveCoreMemoriesForPromptImpl> { return measureAsync("prompt.memory.core", () => retrieveCoreMemoriesForPromptImpl(...args)); }

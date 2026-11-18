@@ -26,6 +26,7 @@ import {
   deleteWidgetProfileNative,
   injectWidgetCss,
   loadWidgetProfiles,
+  loadWidgetProfileData,
   pushWidgetProfileHtml,
   requestPinWidgetProfile,
   saveWidgetProfile,
@@ -52,6 +53,8 @@ function clampInt(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, Math.round(value)));
 }
 
+import { generateWidgetProfileContent } from "@/lib/widget/engine";
+
 export function WidgetSettings({ onNotice }: { onNotice?: (msg: string) => void }) {
   const [config, setConfig] = useState<WidgetConfig>(() => loadWidgetConfig());
   const [templateDraft, setTemplateDraft] = useState(() => {
@@ -64,6 +67,7 @@ export function WidgetSettings({ onNotice }: { onNotice?: (msg: string) => void 
   const [dataVersion, setDataVersion] = useState(0);
   /** 诊断结果（逐行）。null = 还没点过「检查」。 */
   const [diagnosis, setDiagnosis] = useState<string[] | null>(null);
+  const [generatingProfile, setGeneratingProfile] = useState(false);
   const [profiles, setProfiles] = useState<WidgetProfile[]>(() => loadWidgetProfiles());
   const [profileDraft, setProfileDraft] = useState<WidgetProfile | null>(null);
 
@@ -79,12 +83,10 @@ export function WidgetSettings({ onNotice }: { onNotice?: (msg: string) => void 
   useEffect(() => {
     const onChange = () => refresh();
     window.addEventListener(WIDGET_UPDATED_EVENT, onChange);
-    window.addEventListener("virtual-life-state-updated", onChange);
     const onVisible = () => { if (document.visibilityState === "visible") { setPlaced(isWidgetPlaced()); refresh(); } };
     document.addEventListener("visibilitychange", onVisible);
     return () => {
       window.removeEventListener(WIDGET_UPDATED_EVENT, onChange);
-      window.removeEventListener("virtual-life-state-updated", onChange);
       document.removeEventListener("visibilitychange", onVisible);
     };
   }, [refresh]);
@@ -109,7 +111,7 @@ export function WidgetSettings({ onNotice }: { onNotice?: (msg: string) => void 
    */
   const previewHtml = useMemo(() => {
     void dataVersion; // 依赖它：数据变了要重算
-    const real = loadWidgetData();
+    const real = loadWidgetData(config.characterId);
     // 头像优先级：已有头像 > 角色卡头像。
     // 没开「生成状态头像」、也从没生成过时，以前一律空着 → 预览只剩首字，
     // 跟角色卡里设的头像对不上（用户实报「头像不同步」）。
@@ -175,7 +177,7 @@ export function WidgetSettings({ onNotice }: { onNotice?: (msg: string) => void 
       characterId: config.characterId,
       text: SAMPLE_TEXT,
       status: SAMPLE_STATUS,
-      avatar: loadWidgetData()?.avatar || activeCharacterAvatar,
+      avatar: loadWidgetData(config.characterId)?.avatar || activeCharacterAvatar,
       updatedAt: new Date().toISOString(),
       source: "manual",
     });
@@ -204,7 +206,8 @@ export function WidgetSettings({ onNotice }: { onNotice?: (msg: string) => void 
   const profilePreviewHtml = useMemo(() => {
     if (!profileDraft) return "";
     const character = characters.find(item => item.id === profileDraft.characterId);
-    const actual = loadWidgetData(profileDraft.characterId);
+    const profileData = loadWidgetProfileData(profileDraft.id);
+    const actual = (profileData?.characterId === profileDraft.characterId ? profileData : null) ?? loadWidgetData(profileDraft.characterId);
     const data = actual ?? {
       characterId: profileDraft.characterId,
       text: SAMPLE_TEXT,
@@ -448,7 +451,7 @@ export function WidgetSettings({ onNotice }: { onNotice?: (msg: string) => void 
             </div>
             <p className="ws-hint">
               这里可以写任意 HTML 和 CSS——渐变、圆角、阴影、字体、透明度、对齐都能用。
-              桌面上显示什么，就是这段代码渲染出来的样子。新增的生活状态占位符复用生活 APP 的虚拟时间、当前活动、地点线索和下一项日程，不用重复配置时钟。小手机运行且调度可用时会刷新；应用完全退出后不保证实时后台更新。
+              桌面上显示什么，就是这段代码渲染出来的样子。生成会读取角色绑定的预设、世界书与记忆。小手机运行时按设置刷新；退出后不保证后台更新。
             </p>
 
             {templateExpanded ? (
@@ -538,9 +541,32 @@ export function WidgetSettings({ onNotice }: { onNotice?: (msg: string) => void 
             ) : null}
             <p className="ws-hint">
               自动生成会在小手机打开或后台保活时触发，错过的时间点不会补。
-              它用「记忆总结」那条辅助 API 配置，没配就退回你第一条 API。
+              生成使用角色绑定的组件配置，并读取角色卡、世界书、长期记忆和近期经历。
             </p>
           </div>
+
+          <section className="ws-card">
+            <span className="ws-card-title">独立桌面组件</span>
+            <p className="ws-hint">每份配置可分别选择角色、模板与尺寸。生成留言会读取该角色的记忆。</p>
+            <button type="button" className="ws-link" onClick={createProfile}>新建配置</button>
+            <label className="ws-field">已有配置<select value={profileDraft?.id ?? ""} onChange={e => setProfileDraft(profiles.find(p => p.id === e.target.value) ?? null)}>
+              <option value="">选择配置</option>{profiles.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select></label>
+            {profileDraft && <>
+              <label className="ws-field">名称<input value={profileDraft.name} onChange={e => patchProfileDraft({ name: e.target.value })}/></label>
+              <label className="ws-field">角色<select value={profileDraft.characterId} onChange={e => patchProfileDraft({ characterId: e.target.value })}>{characters.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
+              <label className="ws-field">HTML 模板<textarea rows={6} value={profileDraft.template} onChange={e => patchProfileDraft({ template: e.target.value })}/></label>
+              <label className="ws-field">CSS<textarea rows={3} value={profileDraft.customCss} onChange={e => patchProfileDraft({ customCss: e.target.value })}/></label>
+              <div className="ws-inline-row">{(["widthDp", "heightDp", "scale"] as const).map(key => <label key={key}>{key === "widthDp" ? "宽度" : key === "heightDp" ? "高度" : "清晰度"}<input type="number" min={WIDGET_LIMITS[key].min} max={WIDGET_LIMITS[key].max} value={profileDraft[key]} onChange={e => patchProfileDraft({ [key]: clampInt(Number(e.target.value), WIDGET_LIMITS[key].min, WIDGET_LIMITS[key].max) })}/></label>)}</div>
+              <iframe title="独立组件预览" sandbox="" srcDoc={profilePreviewHtml} style={{width:"100%",height:180,border:0}}/>
+              <button type="button" disabled={generatingProfile || !profileDraft.characterId} onClick={async () => {
+                setGeneratingProfile(true);
+                try { await generateWidgetProfileContent(profileDraft.characterId, profileDraft.id); setDataVersion(v => v + 1); onNotice?.("已生成留言"); }
+                catch (e) { onNotice?.(e instanceof Error ? e.message : "生成失败"); } finally { setGeneratingProfile(false); }
+              }}>{generatingProfile ? "生成中…" : "根据角色记忆生成留言"}</button>
+              <div className="ws-inline-row"><button type="button" onClick={persistProfileDraft}>保存配置</button><button type="button" onClick={pushProfileDraft}>刷新原生渲染</button><button type="button" onClick={placeProfileDraft}>添加到真实桌面</button><button type="button" onClick={() => { if (window.confirm("删除此配置？已放置的组件会恢复默认内容。")) removeProfileDraft(); }}>删除配置</button></div>
+            </>}
+          </section>
 
           {/* ── 角色工具 ── */}
           <div className="ws-card">

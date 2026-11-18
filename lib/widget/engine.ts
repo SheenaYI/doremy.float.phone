@@ -17,7 +17,7 @@ import { type ChatMessage, type ChatSession } from "../chat-storage";
 import { buildChatPromptMessages, sendLLMRequest } from "../chat-engine";
 import { resolveUserIdentity } from "../settings-storage";
 import { appendCustomAppTimelineEntry } from "../custom-app-storage";
-import { loadWidgetAutoLastRun, loadWidgetConfig, loadWidgetData, markWidgetAutoRun, saveWidgetData } from "./storage";
+import { loadWidgetAutoLastRun, loadWidgetConfig, loadWidgetData, markWidgetAutoRun, saveWidgetData, saveWidgetProfileData, loadWidgetProfileData } from "./storage";
 
 /**
  * 小组件自己的时间线来源标识。
@@ -109,7 +109,7 @@ export async function runWidgetAutoGenerate(): Promise<boolean> {
 
   const userName = resolveUserIdentity(config.characterId)?.name || "用户";
   try {
-    const line = await generateLine(character, userName, loadWidgetData());
+    const line = await generateLine(character, userName, loadWidgetData(character.id));
     if (!line) return false;
     // 先记号，再写数据：生成可能要十几秒，期间不能被重复触发
     markWidgetAutoRun();
@@ -120,7 +120,7 @@ export async function runWidgetAutoGenerate(): Promise<boolean> {
     // 头像优先级：已生成/上次留下的 > 角色卡头像。
     // 以前只带上一轮的 avatar，没开「状态头像」时永远是空 → 桌面只剩首字，
     // 与角色卡里设的头像完全脱节（用户实报）。
-    let avatar = loadWidgetData()?.avatar || (character.avatar ?? "");
+    let avatar = loadWidgetData(character.id)?.avatar || (character.avatar ?? "");
     if (config.useGeneratedAvatar && canGenerateAvatar()) {
       const generated = await generateWidgetAvatar(character, line.status, line.text);
       if (generated) avatar = generated;
@@ -128,7 +128,7 @@ export async function runWidgetAutoGenerate(): Promise<boolean> {
 
     saveWidgetData({
       characterId: character.id,
-      text: line.text,
+        text: line.text,
       status: line.status,
       avatar,
       updatedAt: new Date().toISOString(),
@@ -143,7 +143,7 @@ export async function runWidgetAutoGenerate(): Promise<boolean> {
     try {
       appendCustomAppTimelineEntry(WIDGET_SOURCE, {
         characterId: character.id,
-        summary: `我在 TA 手机桌面留了一句：${line.text}`,
+            summary: `我在 TA 手机桌面留了一句：${line.text}`,
         detail: line.status ? `当时的状态标签：${line.status}` : undefined,
       });
     } catch {
@@ -156,3 +156,18 @@ export async function runWidgetAutoGenerate(): Promise<boolean> {
   }
 }
 
+
+/** Explicit per-character generation; preserves the global widget's selected character. */
+export async function generateWidgetProfileContent(characterId: string, profileId?: string): Promise<boolean> {
+  const character = loadCharacters().find(c => c.id === characterId);
+  if (!character) throw new Error('请先选择角色');
+  const userName = resolveUserIdentity(characterId)?.name || '用户';
+  const previous = profileId ? loadWidgetProfileData(profileId) : null;
+  const line = await generateLine(character, userName, previous?.characterId === characterId ? previous : loadWidgetData(characterId));
+  if (!line) throw new Error('没有生成可用的留言，请检查角色的组件绑定和输出格式');
+  const data: WidgetData = { characterId, ...line, avatar: character.avatar || '', updatedAt: new Date().toISOString(), source: 'auto' };
+  if (profileId) saveWidgetProfileData(profileId, data);
+  saveWidgetData(data);
+  appendCustomAppTimelineEntry(WIDGET_SOURCE, { characterId, summary: `我在 TA 手机桌面留了一句：${line.text}`, detail: line.status });
+  return true;
+}

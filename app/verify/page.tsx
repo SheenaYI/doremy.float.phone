@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
 import "./verify.css";
@@ -234,7 +233,7 @@ export default function VerifyPage() {
         )}
       </section>
 
-      <Link className="vr-back" href="/">← 返回登录页</Link>
+      <a className="vr-back" href="/">← 返回登录页</a>
       <div className="vr-footer">FLOAT · LIMITED BETA</div>
     </main>
   );

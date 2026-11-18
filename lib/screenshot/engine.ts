@@ -170,15 +170,6 @@ async function trimRecords(records: ScreenshotRecord[], keep: number): Promise<S
   return kept;
 }
 
-/** 移除一条截屏记录，并清理对应媒体文件。 */
-export async function removeScreenshotRecord(id: string): Promise<void> {
-  const records = loadScreenshotRecords();
-  const target = records.find(record => record.id === id);
-  if (!target) return;
-  await deleteMediaRef(target.ref);
-  saveScreenshotRecords(records.filter(record => record.id !== id));
-}
-
 /** 清空全部截屏记录与对应图片。 */
 export async function clearAllScreenshots(): Promise<void> {
   const records = loadScreenshotRecords();
@@ -203,4 +194,10 @@ function notifyScreenshot(record: ScreenshotRecord): void {
     null,
     null,
   );
+}
+
+export async function deleteScreenshotRecord(id: string): Promise<void> {
+  const records = loadScreenshotRecords();
+  // Remove the recent-capture index only: a shared image may still be used by a chat.
+  saveScreenshotRecords(records.filter(record => record.id !== id));
 }

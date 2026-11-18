@@ -18,9 +18,8 @@ import {
     normalizeRoomList,
     normalizeRoomPrompts,
 } from "./memory-room";
-import { kvGet, kvSet, kvRemove, registerKvMigration, registerDynamicPrefix } from "./kv-db";
+import { kvGet, kvSet, registerKvMigration, registerDynamicPrefix } from "./kv-db";
 import { openIndexedDbAtLeast } from "./idb-open";
-import { recordPerformanceMetric } from "./performance-diagnostics";
 
 // ── Long-term memory DB (unchanged from v1) ──
 
@@ -80,10 +79,10 @@ function runRequest<T>(req: IDBRequest<T>): Promise<T> {
 // ── Long-term Entry CRUD ──
 
 export async function saveMemoryEntry(entry: MemoryEntry): Promise<void> {
-    invalidateMemoryEntriesCache();
     const db = await openDb();
     if (!db) return;
     try {
+        invalidateMemoryReads();
         const tx = db.transaction(STORE_NAME, "readwrite");
         tx.objectStore(STORE_NAME).put(entry);
         await new Promise<void>((res, rej) => {
@@ -91,69 +90,53 @@ export async function saveMemoryEntry(entry: MemoryEntry): Promise<void> {
             tx.onerror = () => rej(tx.error);
         });
     } finally {
+        invalidateMemoryReads();
         db.close();
     }
 }
 
-// 同一次生成里长期记忆和核心记忆会并发调用 loadMemoryEntries；
-// 两次都打开 IndexedDB 全量读取，白白多花几百毫秒。共享 in-flight 请求，
-// 解析完即清理，不做跨轮缓存，避免读到旧数据。
-const _entriesInflight = new Map<string, Promise<MemoryEntry[]>>();
-// IndexedDB 里的 MemoryEntry 带着 1536 维 embedding，全量 get 再反序列化在手机上
-// 单次数百毫秒；而每次生成都会读一遍。这里按角色做进程内缓存，写操作统一失效。
-let _entriesCacheVersion = 0;
-const _entriesCache = new Map<string, { version: number; entries: MemoryEntry[] }>();
-
-function invalidateMemoryEntriesCache(): void {
-    _entriesCacheVersion += 1;
-    _entriesCache.clear();
-}
-
+let memoryVersion = 0;
+const memoryReads = new Map<string, { version: number; at: number; value: Promise<MemoryEntry[]> }>();
+function invalidateMemoryReads(): void { memoryVersion++; memoryReads.clear(); }
 export async function loadMemoryEntries(characterId: string): Promise<MemoryEntry[]> {
-    const cached = _entriesCache.get(characterId);
-    if (cached && cached.version === _entriesCacheVersion) {
-        recordPerformanceMetric("prompt.memory.load_entries", 0, { cacheHit: true, entries: cached.entries.length });
-        return cached.entries;
-    }
-    const pending = _entriesInflight.get(characterId);
-    if (pending) return pending;
-    const versionAtStart = _entriesCacheVersion;
-    const load = loadMemoryEntriesFromDb(characterId).then(entries => {
-        if (versionAtStart === _entriesCacheVersion) {
-            _entriesCache.set(characterId, { version: _entriesCacheVersion, entries });
-        }
-        return entries;
-    });
-    _entriesInflight.set(characterId, load);
-    void load.then(
-        () => { if (_entriesInflight.get(characterId) === load) _entriesInflight.delete(characterId); },
-        () => { if (_entriesInflight.get(characterId) === load) _entriesInflight.delete(characterId); },
-    );
-    return load;
+    const cached = memoryReads.get(characterId);
+    if (cached?.version === memoryVersion && Date.now() - cached.at < 30000) return (await cached.value).slice();
+    const value = readMemoryEntries(characterId);
+    const entry = { version: memoryVersion, at: Date.now(), value };
+    if (memoryReads.size >= 3) memoryReads.delete(memoryReads.keys().next().value!);
+    memoryReads.set(characterId, entry);
+    value.catch(() => { if (memoryReads.get(characterId) === entry) memoryReads.delete(characterId); });
+    return (await value).slice();
 }
 
-async function loadMemoryEntriesFromDb(characterId: string): Promise<MemoryEntry[]> {
+function readMemoryCursor(request: IDBRequest<IDBCursorWithValue | null>): Promise<MemoryEntry[]> {
+    return new Promise((resolve, reject) => {
+        const entries: MemoryEntry[] = [];
+        request.onerror = () => reject(request.error);
+        request.onsuccess = () => {
+            const cursor = request.result;
+            if (!cursor) { resolve(entries); return; }
+            entries.push(cursor.value as MemoryEntry); cursor.continue();
+        };
+    });
+}
+
+async function readMemoryEntries(characterId: string): Promise<MemoryEntry[]> {
     const db = await openDb();
     if (!db) return [];
     try {
-        const loadStartedAt = typeof performance !== "undefined" ? performance.now() : Date.now();
         let entries: MemoryEntry[];
         try {
             const tx = db.transaction(STORE_NAME, "readonly");
             const store = tx.objectStore(STORE_NAME);
             const idx = store.index("by_character");
-            entries = await runRequest(idx.getAll(characterId));
+            entries = await readMemoryCursor(idx.openCursor(IDBKeyRange.only(characterId)));
         } catch {
             const tx = db.transaction(STORE_NAME, "readonly");
-            const allEntries: MemoryEntry[] = await runRequest(tx.objectStore(STORE_NAME).getAll());
+            const allEntries = await readMemoryCursor(tx.objectStore(STORE_NAME).openCursor());
             entries = allEntries.filter(entry => entry.characterId === characterId);
         }
         entries.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
-        recordPerformanceMetric("prompt.memory.load_entries", (typeof performance !== "undefined" ? performance.now() : Date.now()) - loadStartedAt, {
-            cacheHit: false,
-            entries: entries.length,
-            withEmbedding: entries.reduce((count, entry) => count + (entry.embedding?.length ? 1 : 0), 0),
-        });
         return entries;
     } finally {
         db.close();
@@ -254,10 +237,10 @@ export async function patchMemoryEntries(
 }
 
 export async function deleteMemoryEntry(id: string): Promise<void> {
-    invalidateMemoryEntriesCache();
     const db = await openDb();
     if (!db) return;
     try {
+        invalidateMemoryReads();
         const tx = db.transaction(STORE_NAME, "readwrite");
         tx.objectStore(STORE_NAME).delete(id);
         await new Promise<void>((res, rej) => {
@@ -265,16 +248,17 @@ export async function deleteMemoryEntry(id: string): Promise<void> {
             tx.onerror = () => rej(tx.error);
         });
     } finally {
+        invalidateMemoryReads();
         db.close();
     }
 }
 
 export async function deleteMemoryEntries(ids: string[]): Promise<void> {
     if (ids.length === 0) return;
-    invalidateMemoryEntriesCache();
     const db = await openDb();
     if (!db) return;
     try {
+        invalidateMemoryReads();
         const tx = db.transaction(STORE_NAME, "readwrite");
         const store = tx.objectStore(STORE_NAME);
         for (const id of ids) {
@@ -285,6 +269,7 @@ export async function deleteMemoryEntries(ids: string[]): Promise<void> {
             tx.onerror = () => rej(tx.error);
         });
     } finally {
+        invalidateMemoryReads();
         db.close();
     }
 }
@@ -348,19 +333,6 @@ export function normalizeMemoryConfig(config: MemoryConfig): MemoryConfig {
             ...DEFAULT_MEMORY_CONFIG.shortTermAllowedSources,
             ...(config.shortTermAllowedSources ?? {}),
         },
-        longTermAllowedSources: {
-            ...DEFAULT_MEMORY_CONFIG.longTermAllowedSources,
-            ...(config.longTermAllowedSources ?? {}),
-        },
-        shortTermSourceLimits: {
-            ...DEFAULT_MEMORY_CONFIG.shortTermSourceLimits,
-            ...(config.shortTermSourceLimits ?? {}),
-        },
-        shortTermAppLimits: {
-            ...DEFAULT_MEMORY_CONFIG.shortTermAppLimits,
-            ...(config.shortTermAppLimits ?? {}),
-        },
-        shortTermLimitVersion: config.shortTermLimitVersion ?? 0,
     };
 }
 
@@ -369,25 +341,7 @@ export function loadMemoryConfig(): MemoryConfig {
     try {
         const raw = kvGet(CONFIG_KEY);
         if (!raw) return normalizeMemoryConfig({ ...DEFAULT_MEMORY_CONFIG });
-        const parsed = JSON.parse(raw) as Partial<MemoryConfig>;
-        const merged: Partial<MemoryConfig> = { ...DEFAULT_MEMORY_CONFIG, ...parsed };
-        // 旧配置迁移：长期来源首次升级时沿用短期来源选择，之后两者独立。
-        if (parsed.longTermAllowedSources === undefined && parsed.shortTermAllowedSources) {
-            merged.longTermAllowedSources = { ...parsed.shortTermAllowedSources };
-        }
-        const config = normalizeMemoryConfig(merged as MemoryConfig);
-        // 旧版短期条数上限迁移：只改仍等于旧出厂默认值的项，用户改过的保留。
-        if ((parsed.shortTermLimitVersion ?? 0) < 2) {
-            const limits = { ...(config.shortTermAppLimits ?? {}) };
-            if (limits.chat === 30) limits.chat = 0;
-            if (limits.group_chat === 24) limits.group_chat = 0;
-            if (limits.life === 20) limits.life = 0;
-            if (limits.phone_widget === 4) limits.phone_widget = 50;
-            config.shortTermAppLimits = limits;
-            config.shortTermLimitVersion = 2;
-            kvSet(CONFIG_KEY, JSON.stringify(config));
-        }
-        return config;
+        return normalizeMemoryConfig({ ...DEFAULT_MEMORY_CONFIG, ...JSON.parse(raw) });
     } catch {
         return normalizeMemoryConfig({ ...DEFAULT_MEMORY_CONFIG });
     }
@@ -456,117 +410,6 @@ registerDynamicPrefix(EVENT_COUNTER_PREFIX);
 registerDynamicPrefix(LAST_SUMMARY_TS_PREFIX);
 registerDynamicPrefix(CORE_COUNTER_PREFIX);
 registerDynamicPrefix(LAST_CORE_SUMMARY_TS_PREFIX);
-
-/**
- * Move memory and per-character summary metadata written under legacy
- * ChatContact.id values to the canonical Character.id. The entry rewrite is a
- * single IndexedDB transaction; source keys are removed only after copying.
- */
-export async function migrateCharacterMemoryIdentities(
-    mappings: Array<{ fromId: string; toId: string }>,
-): Promise<{ migratedEntries: number; migratedMetadata: number; available: boolean }> {
-    const map = new Map(mappings.filter(item => item.fromId && item.toId && item.fromId !== item.toId)
-        .map(item => [item.fromId, item.toId]));
-    if (map.size === 0) return { migratedEntries: 0, migratedMetadata: 0, available: true };
-    const db = await openDb();
-    if (!db) return { migratedEntries: 0, migratedMetadata: 0, available: false };
-    let migratedEntries = 0;
-    try {
-        const tx = db.transaction(STORE_NAME, "readwrite");
-        const store = tx.objectStore(STORE_NAME);
-        const request = store.getAll();
-        await new Promise<void>((resolve, reject) => {
-            request.onsuccess = () => {
-                try {
-                    for (const entry of request.result as MemoryEntry[]) {
-                        const nextCharacterId = map.get(entry.characterId);
-                        if (!nextCharacterId) continue;
-                        store.put({ ...entry, characterId: nextCharacterId });
-                        migratedEntries += 1;
-                    }
-                } catch (error) {
-                    reject(error);
-                }
-            };
-            request.onerror = () => reject(request.error || new Error("读取旧角色记忆失败"));
-            tx.oncomplete = () => resolve();
-            tx.onerror = () => reject(tx.error || new Error("迁移角色记忆失败"));
-            tx.onabort = () => reject(tx.error || new Error("角色记忆迁移事务中止"));
-        });
-    } finally {
-        db.close();
-    }
-
-    let migratedMetadata = 0;
-    const moveCounter = (prefix: string) => {
-        for (const [fromId, toId] of map) {
-            const oldValue = Number(kvGet(prefix + fromId) || 0);
-            if (!oldValue) continue;
-            const nextValue = Number(kvGet(prefix + toId) || 0);
-            kvSet(prefix + toId, String(nextValue + oldValue));
-            kvRemove(prefix + fromId);
-            migratedMetadata += 1;
-        }
-    };
-    const moveLatestTimestamp = (prefix: string) => {
-        for (const [fromId, toId] of map) {
-            const oldValue = kvGet(prefix + fromId);
-            if (!oldValue) continue;
-            const nextValue = kvGet(prefix + toId);
-            if (!nextValue || oldValue > nextValue) kvSet(prefix + toId, oldValue);
-            kvRemove(prefix + fromId);
-            migratedMetadata += 1;
-        }
-    };
-    moveCounter(EVENT_COUNTER_PREFIX);
-    moveCounter(CORE_COUNTER_PREFIX);
-    moveLatestTimestamp(LAST_SUMMARY_TS_PREFIX);
-    moveLatestTimestamp(LAST_CORE_SUMMARY_TS_PREFIX);
-    for (const [fromId, toId] of map) {
-        const oldRaw = kvGet(SUMMARY_STATUS_PREFIX + fromId);
-        if (!oldRaw) continue;
-        const nextRaw = kvGet(SUMMARY_STATUS_PREFIX + toId);
-        try {
-            const oldStatus = JSON.parse(oldRaw) as { at?: string };
-            const nextStatus = nextRaw ? JSON.parse(nextRaw) as { at?: string } : null;
-            if (!nextStatus?.at || (oldStatus.at && oldStatus.at > nextStatus.at)) {
-                kvSet(SUMMARY_STATUS_PREFIX + toId, oldRaw);
-            }
-        } catch {
-            if (!nextRaw) kvSet(SUMMARY_STATUS_PREFIX + toId, oldRaw);
-        }
-        kvRemove(SUMMARY_STATUS_PREFIX + fromId);
-        migratedMetadata += 1;
-    }
-    return { migratedEntries, migratedMetadata, available: true };
-}
-
-export type MemorySummaryStatus = {
-    at: string;
-    ok: boolean;
-    error?: string;
-    eventCount?: number;
-};
-
-const SUMMARY_STATUS_PREFIX = "ai_phone_memory_summary_status:";
-registerDynamicPrefix(SUMMARY_STATUS_PREFIX);
-
-export function saveMemorySummaryStatus(characterId: string, status: MemorySummaryStatus): void {
-    if (typeof window === "undefined") return;
-    kvSet(SUMMARY_STATUS_PREFIX + characterId, JSON.stringify(status));
-}
-
-export function loadMemorySummaryStatus(characterId: string): MemorySummaryStatus | null {
-    if (typeof window === "undefined") return null;
-    try {
-        const raw = kvGet(SUMMARY_STATUS_PREFIX + characterId);
-        if (!raw) return null;
-        const parsed = JSON.parse(raw) as Partial<MemorySummaryStatus>;
-        return typeof parsed?.at === "string" && typeof parsed?.ok === "boolean"
-            ? { at: parsed.at, ok: parsed.ok, error: typeof parsed.error === "string" ? parsed.error : undefined, eventCount: typeof parsed.eventCount === "number" ? parsed.eventCount : undefined }
-            : null;
-    } catch { return null; }
-}
 
 export function getEventCounter(characterId: string): number {
     if (typeof window === "undefined") return 0;

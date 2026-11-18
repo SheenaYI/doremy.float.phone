@@ -19,9 +19,10 @@ import {
 } from "@/lib/vn-asset-storage";
 import { getThemeAssetDataUrl, saveThemeAssetFromBlob } from "@/lib/theme-storage";
 import { removeConnectedEdgeBackgroundFromDataUrl } from "@/lib/image-background-removal";
+import { VnMapView } from "./vn-map";
 import { ConfirmDialog } from "@/components/ui/modal";
 
-type Tab = "scenes" | "sprites";
+type Tab = "scenes" | "sprites" | "maps";
 
 interface VnAssetPageProps {
   onNotice?: (msg: string) => void;
@@ -164,6 +165,7 @@ export function VnAssetPage({ onNotice }: VnAssetPageProps) {
   return (
     <div className="vna-page">
       <style>{`
+        .vna-studio[data-map-mode] .vna-assets-heading, .vna-studio[data-map-mode] .vna-add-btn, .vna-studio[data-map-mode] .vna-grid, .vna-studio[data-map-mode] .vna-empty { display:none; }
         .vna-page {
           padding: 16px 20px 32px;
           display: flex;
@@ -610,10 +612,11 @@ export function VnAssetPage({ onNotice }: VnAssetPageProps) {
         }
       `}</style>
 
-      <div className="vna-studio">
+      <div className="vna-studio" data-map-mode={tab === "maps" || undefined}>
         <div className="vna-studio-header">
           {/* ── Tabs ── */}
           <div className="vna-tabs">
+            <button type="button" className="vna-tab" data-active={tab === "maps" ? "true" : undefined} onClick={() => setTab("maps")}>地图</button>
             <button type="button" className="vna-tab" data-active={tab === "scenes" ? "true" : undefined} onClick={() => setTab("scenes")}>
               <Mountain size={14} strokeWidth={1.75} /> 场景
             </button>
@@ -645,6 +648,7 @@ export function VnAssetPage({ onNotice }: VnAssetPageProps) {
                 onChange={(e) => setSelectedCharId(e.target.value)}
               >
                 {tab === "scenes" && <option value="">所有角色</option>}
+                {tab === "maps" && <option value="">共用地图</option>}
                 {tab === "sprites" && <option value="">选择角色</option>}
                 {characters.map((c) => (
                   <option key={c.id} value={c.id}>{c.name}</option>
@@ -655,6 +659,7 @@ export function VnAssetPage({ onNotice }: VnAssetPageProps) {
         </div>
 
         <div className="vna-assets-body">
+          {tab === "maps" && <VnMapView key={selectedCharId} characterId={selectedCharId} editing/>}
           <div className="vna-assets-heading">
             <div>
               <h3 className="vna-assets-title">{tab === "scenes" ? "场景资源" : "立绘资源"}</h3>

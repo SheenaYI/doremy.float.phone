@@ -1814,13 +1814,11 @@ export function assembleGroupPromptPayload(input: GroupAssemblerInput): LLMMessa
     const resolvedUserName = userIdentity?.name || userName;
     const blocks: PromptBlock[] = [];
     const timeAware = resolveTimeAware(input.timeAware);
-    const groupTimeMembers = members.map(member => ({
-        name: member.character.name,
-        timeZone: member.character.timeZone,
-    }));
-    const groupTimeContext = timeAware
-        ? input.timeContext ?? buildGroupTimeContext(groupTimeMembers)
-        : buildGroupTimeContext(groupTimeMembers, new Date(), false);
+    const groupTimeContext = input.timeContext
+        ?? buildGroupTimeContext(members.map(member => ({
+            name: member.character.name,
+            timeZone: member.character.timeZone,
+        })));
     const groupPromptTimestampOptions = input.promptTimestampOptions
         ?? getPromptTimestampOptionsForTimeContext(groupTimeContext);
     const beforeHistoryDepth = resolveBeforeHistoryDepth(history.length, unifiedRecentItems?.length);
@@ -1914,9 +1912,7 @@ export function assembleGroupPromptPayload(input: GroupAssemblerInput): LLMMessa
         const engine = new MacroEngine(char.name, resolvedUserName);
         applyTimeContextToMacroEngine(
             engine,
-            timeAware
-                ? input.memberTimeContexts?.[char.id] ?? buildCharacterTimeContext(char.timeZone)
-                : buildCharacterTimeContext(char.timeZone, new Date(), false),
+            input.memberTimeContexts?.[char.id] ?? buildCharacterTimeContext(char.timeZone),
         );
         engine.description = char.persona ?? "";
         engine.personality = char.personality ?? "";

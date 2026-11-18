@@ -1,51 +1,54 @@
 "use client";
 
+import dynamic from "next/dynamic";
+
 import { Component, memo, useCallback, useEffect, useInsertionEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ErrorInfo, type ReactNode } from "react";
 
 import { updateStatusBarTone } from "@/lib/bg-tone";
-import { loadDeviceCompatibilitySettings } from "@/lib/device-compatibility";
 import { startDiaryEntryTimerService, stopDiaryEntryTimerService } from "@/lib/diary-entry-timer-service";
 import { startFollowUpService, stopFollowUpService } from "@/lib/follow-up-service";
 import { startMomentsService, stopMomentsService } from "@/lib/moments-engine";
 import { bgTimerCleanup } from "@/lib/bg-timer";
-import { PhoneThemeApp } from "@/components/phone-theme-app";
-import { PhoneCharacterApp } from "@/components/phone-character-app";
-import { PhoneSettingsApp } from "@/components/phone-settings-app";
-import { PhoneChatApp } from "@/components/chat/phone-chat-app";
+const PhoneThemeApp = dynamic(() => import("@/components/phone-theme-app").then(m => m.PhoneThemeApp), { loading: () => <div role="status" className="app-opening">正在打开…</div> });
+const PhoneCharacterApp = dynamic(() => import("@/components/phone-character-app").then(m => m.PhoneCharacterApp), { loading: () => <div role="status" className="app-opening">正在打开…</div> });
+const PhoneSettingsApp = dynamic(() => import("@/components/phone-settings-app").then(m => m.PhoneSettingsApp), { loading: () => <div role="status" className="app-opening">正在打开…</div> });
+const PhoneChatApp = dynamic(() => import("@/components/chat/phone-chat-app").then(m => m.PhoneChatApp), { loading: () => <div role="status" className="app-opening">正在打开…</div> });
 import ShareDestinationSheet from "@/components/chat/share-destination-sheet";
 import { PhonePlaceholderApp } from "@/components/phone-placeholder-app";
-import MusicApp from "@/components/music/music-app";
+const MusicApp = dynamic(() => import("@/components/music/music-app"), { loading: () => <div role="status" className="app-opening">正在打开…</div> });
 import MusicPlayer from "@/components/music/music-player";
 import MusicFloat from "@/components/music/music-float";
 import MiniAppWindow from "@/components/music/mini-app-window";
-import { PhoneCalendarApp } from "@/components/calendar-app";
-import { PhoneQaApp } from "@/components/phone-qa-app";
+const PhoneCalendarApp = dynamic(() => import("@/components/calendar-app").then(m => m.PhoneCalendarApp), { loading: () => <div role="status" className="app-opening">正在打开…</div> });
+const PhoneQaApp = dynamic(() => import("@/components/phone-qa-app").then(m => m.PhoneQaApp), { loading: () => <div role="status" className="app-opening">正在打开…</div> });
 import { ChatPluginPageBoundary } from "@/components/chat/chat-plugin-page-boundary";
-import { ResourceHubApp } from "@/components/resource-hub/resource-hub-app";
+const ResourceHubApp = dynamic(() => import("@/components/resource-hub/resource-hub-app").then(m => m.ResourceHubApp), { loading: () => <div role="status" className="app-opening">正在打开…</div> });
 import "@/lib/qa-error-log";
-import { RealityBridgeApp } from "@/components/reality-bridge-app";
+const RealityBridgeApp = dynamic(() => import("@/components/reality-bridge-app").then(m => m.RealityBridgeApp), { loading: () => <div role="status" className="app-opening">正在打开…</div> });
 import { REALITY_BRIDGE_APP_EVENT_NAME, REALITY_BRIDGE_DATA_EVENT } from "@/lib/reality-bridge/types";
-import { DiaryApp } from "@/components/diary/diary-app";
-import { XiaohongshuApp } from "@/components/xiaohongshu/xiaohongshu-app";
-import { StoryApp } from "@/components/story/story-app";
-import { ArchiveRoomApp } from "@/components/archive-room-app";
+const DiaryApp = dynamic(() => import("@/components/diary/diary-app").then(m => m.DiaryApp), { loading: () => <div role="status" className="app-opening">正在打开…</div> });
+const XiaohongshuApp = dynamic(() => import("@/components/xiaohongshu/xiaohongshu-app").then(m => m.XiaohongshuApp), { loading: () => <div role="status" className="app-opening">正在打开…</div> });
+const StoryApp = dynamic(() => import("@/components/story/story-app").then(m => m.StoryApp), { loading: () => <div role="status" className="app-opening">正在打开…</div> });
+const ArchiveRoomApp = dynamic(() => import("./archive-room-app").then(m => m.ArchiveRoomApp));
+const WatchTogetherApp = dynamic(() => import("./watch-together-app").then(m => m.WatchTogetherApp));
 import { CALL_STATS_ENTRY_HTML } from "@/lib/builtin-apps/call-stats-source";
-import { VnApp } from "@/components/vn/vn-app";
-import ReadingApp from "@/components/reading/reading-app";
-import MapApp from "@/components/map/map-app";
-import { DwellingApp } from "@/components/dwelling/dwelling-app";
+const VnApp = dynamic(() => import("@/components/vn/vn-app").then(m => m.VnApp), { loading: () => <div role="status" className="app-opening">正在打开…</div> });
+const ReadingApp = dynamic(() => import("@/components/reading/reading-app"), { loading: () => <div role="status" className="app-opening">正在打开…</div> });
+const MapApp = dynamic(() => import("@/components/map/map-app"), { loading: () => <div role="status" className="app-opening">正在打开…</div> });
+const DwellingApp = dynamic(() => import("@/components/dwelling/dwelling-app").then(m => m.DwellingApp), { loading: () => <div role="status" className="app-opening">正在打开…</div> });
 import { MascotFloat } from "@/components/mascot/mascot-float";
 import { PerceptionBootstrap } from "@/components/perception/perception-bootstrap";
 import { MascotPreviewHost } from "@/components/mascot/mascot-preview-host";
 import { useMusicControlsOptional } from "@/lib/music-context";
-import { PhoneResourcesApp, type ResourceSubPage } from "@/components/phone-resources-app";
-import { CheckPhoneApp } from "@/components/checkphone/checkphone-app";
-import { ShoppingApp } from "@/components/shopping/shopping-app";
-import { GameHubApp } from "@/components/game/game-hub-app";
-import { MixologyApp } from "@/components/mixology/mixology-app";
-import InterviewMagazineApp from "@/components/interview/interview-magazine-app";
-import { CoCreateApp } from "@/components/cocreate/cocreate-app";
-import { AppMarketApp } from "@/components/app-market/app-market-app";
+import type { ResourceSubPage } from "@/components/phone-resources-app";
+const PhoneResourcesApp = dynamic(() => import("@/components/phone-resources-app").then(m => m.PhoneResourcesApp));
+const CheckPhoneApp = dynamic(() => import("@/components/checkphone/checkphone-app").then(m => m.CheckPhoneApp), { loading: () => <div role="status" className="app-opening">正在打开…</div> });
+const ShoppingApp = dynamic(() => import("@/components/shopping/shopping-app").then(m => m.ShoppingApp), { loading: () => <div role="status" className="app-opening">正在打开…</div> });
+const GameHubApp = dynamic(() => import("@/components/game/game-hub-app").then(m => m.GameHubApp), { loading: () => <div role="status" className="app-opening">正在打开…</div> });
+const MixologyApp = dynamic(() => import("@/components/mixology/mixology-app").then(m => m.MixologyApp), { loading: () => <div role="status" className="app-opening">正在打开…</div> });
+const InterviewMagazineApp = dynamic(() => import("@/components/interview/interview-magazine-app"), { loading: () => <div role="status" className="app-opening">正在打开…</div> });
+const CoCreateApp = dynamic(() => import("@/components/cocreate/cocreate-app").then(m => m.CoCreateApp), { loading: () => <div role="status" className="app-opening">正在打开…</div> });
+const AppMarketApp = dynamic(() => import("@/components/app-market/app-market-app").then(m => m.AppMarketApp), { loading: () => <div role="status" className="app-opening">正在打开…</div> });
 import { CustomAppRunner } from "@/components/app-market/custom-app-runner";
 import { CustomAppForegroundBoundary } from "@/components/app-market/custom-app-failure";
 import { hydrateKvDb, kvGet, kvSet, kvRemove, kvKeysWithPrefix } from "@/lib/kv-db";
@@ -157,7 +160,6 @@ const EMOJI_FONTS = '"Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", 
 
 const ICON_LAYOUT_STORAGE_KEY = "ai_phone_icon_layout_v2";
 const ICON_LAYOUT_STORAGE_KEY_V1 = "ai_phone_icon_layout_v1";
-const REMOVED_LIFESTYLE_APP_IDS = ["life", "photowall", "watchtogether"] as const;
 // Sentinel "page" used by the drag engine to mean "the dock". getDesktopPageNumber
 // returns 0 for it and getDesktopPageKeys filters it out, so page iteration never
 // treats the dock as a real page.
@@ -417,39 +419,6 @@ function getInstalledCustomIconIds(): Set<string> {
   return new Set(loadInstalledCustomApps().map(app => toCustomAppIconId(app.id)));
 }
 
-
-function removeRetiredAppsFromDesktop(
-  layout: DesktopLayout,
-  widgets: WidgetInstance[],
-  dock: DesktopIconId[],
-  folders: DesktopFolderMap,
-): { layout: DesktopLayout; dock: DesktopIconId[]; folders: DesktopFolderMap; changed: boolean } {
-  const removed = new Set<DesktopIconId>(REMOVED_LIFESTYLE_APP_IDS);
-  const next = cloneDesktopLayout(layout, widgets);
-  let changed = false;
-  for (const pageKey of getDesktopPageKeysForState(next, widgets)) {
-    const before = next[pageKey] ?? [];
-    const filtered = before.filter(icon => !removed.has(icon.id));
-    if (filtered.length !== before.length) {
-      next[pageKey] = filtered;
-      changed = true;
-    }
-  }
-  const nextDock = dock.filter(id => !removed.has(id));
-  if (nextDock.length !== dock.length) changed = true;
-  const nextFolders: DesktopFolderMap = {};
-  for (const [folderId, folder] of Object.entries(folders)) {
-    const icons = folder.icons.filter(id => !removed.has(id));
-    if (icons.length !== folder.icons.length) changed = true;
-    if (icons.length === 0) {
-      changed = true;
-      continue;
-    }
-    nextFolders[folderId] = { ...folder, icons };
-  }
-  return { layout: next, dock: nextDock, folders: nextFolders, changed };
-}
-
 function migrateLegacyDesktopIconId(id: string, customIconIds = getInstalledCustomIconIds()): DesktopIconId | null {
   if (id === "weibo") return "game";
   if (id === "fortune") return "interview_magazine";
@@ -557,9 +526,6 @@ function normalizeLayout(raw: unknown, widgets: WidgetInstance[], dockIds: Set<D
   for (const folder of Object.values(folders)) {
     for (const memberId of folder.icons) allPlaced.add(memberId);
   }
-  // PAGE_4_DEFAULT 必须一并纳入兜底：生活/档案室/照片墙/一起看四个图标是后加的
-  // 独立页，漏了它们时一旦走「恢复默认外观 / 导入主题包 / 旧布局迁移」路径，
-  // 图标不被兜底就会被永久清掉，且每次重启都救不回（用户反馈过新增应用消失）。
   const allDefaults = [...PAGE_1_DEFAULT, ...PAGE_2_DEFAULT, ...PAGE_3_DEFAULT, ...PAGE_4_DEFAULT, ...DOCK_DEFAULT];
 
   for (const id of allDefaults) {
@@ -1120,16 +1086,7 @@ function useAndroidNativeKeyboardViewport() {
       // 手机壳有 -status-bar-drop 的负 margin-top，高度补上这段才能让底栏贴住视口底/键盘顶
       const wrap = document.querySelector<HTMLElement>(".phone-shell-wrap");
       const drop = wrap ? (parseFloat(getComputedStyle(wrap).getPropertyValue("--status-bar-drop")) || 0) : 0;
-      const compatibilityScale = Math.max(0.5, Number.parseFloat(root.style.getPropertyValue("--compat-layout-scale")) || 1);
-      const compatibility = loadDeviceCompatibilitySettings();
-      const keyboardResized = window.innerHeight < maxInnerHeight - 80;
-      if (!keyboardResized && compatibility.layoutMode === "manual" && compatibility.screenHeight >= 200) {
-        const dpr = Math.max(1, window.devicePixelRatio || 1);
-        const referenceHeight = compatibility.screenUnit === "physical" ? compatibility.screenHeight / dpr : compatibility.screenHeight;
-        root.style.setProperty("--phone-screen-height", `${Math.round(referenceHeight / Math.max(0.75, compatibility.uiScale || 1) + drop / compatibilityScale)}px`);
-      } else {
-        root.style.setProperty("--phone-screen-height", `${Math.round((window.innerHeight + drop) / compatibilityScale)}px`);
-      }
+      root.style.setProperty("--phone-screen-height", `${Math.round(window.innerHeight + drop)}px`);
     };
 
     const requestApply = () => {
@@ -1223,7 +1180,6 @@ export function DesktopShell({ initialThemeProfile, initialThemeAssets }: Deskto
   const [customAppUpdateBusy, setCustomAppUpdateBusy] = useState(false);
   const customAppUpdateCheckingRef = useRef<Set<string>>(new Set());
   const activeAppRef = useRef<DesktopIconId | null>(null);
-  const swipeBackGestureRef = useRef<{ pointerId: number; startX: number; startY: number; edge: "left" | "right"; horizontal: boolean } | null>(null);
   const [customAppBadges, setCustomAppBadges] = useState<Record<string, number>>({});
   const [customAppBackgroundRuns, setCustomAppBackgroundRuns] = useState<CustomAppBackgroundEventRun[]>([]);
   const [customAppBackgroundToolRuns, setCustomAppBackgroundToolRuns] = useState<CustomAppBackgroundToolRun[]>([]);
@@ -1640,15 +1596,11 @@ export function DesktopShell({ initialThemeProfile, initialThemeAssets }: Deskto
         try {
           const normalized = normalizeLayout(JSON.parse(rawV2), hydratedWidgets, dockIds, hydratedFolders);
           const sane = sanitizeDesktopFolders(hydratedFolders, normalized, hydratedDock, hydratedWidgets);
-          const retired = removeRetiredAppsFromDesktop(sane.layout, hydratedWidgets, hydratedDock, sane.folders);
-          setDock(retired.dock);
-          setFolders(retired.folders);
-          setLayout(retired.layout);
-          if (sane.changed) writeDesktopFolders(sane.folders);
-          if (retired.changed || sane.changed) {
-            kvSet(ICON_LAYOUT_STORAGE_KEY, JSON.stringify(retired.layout));
-            writeDockLayout(retired.dock);
-            writeDesktopFolders(retired.folders);
+          setFolders(sane.folders);
+          setLayout(sane.layout);
+          if (sane.changed) {
+            writeDesktopFolders(sane.folders);
+            kvSet(ICON_LAYOUT_STORAGE_KEY, JSON.stringify(sane.layout));
           }
           setDesktopReady(true);
           return;
@@ -2534,30 +2486,6 @@ html,body{margin:0;padding:0;width:100%;height:100%;background:#121110;color:rgb
   // Allow other components to switch apps via custom event
   const [chatInitSessionId, setChatInitSessionId] = useState<string | null>(null);
   const [activeChatSession, setActiveChatSession] = useState<ChatSession | null>(null);
-  useEffect(() => {
-    const handleNativeBack = (event: Event) => {
-      const custom = event as CustomEvent<{ handled?: boolean }>;
-      if (activeApp !== null) {
-        const appBack = { handled: false };
-        window.dispatchEvent(new CustomEvent("floatphone-app-back", { detail: appBack }));
-        if (appBack.handled) {
-          if (custom.detail) custom.detail.handled = true;
-          return;
-        }
-        if (custom.detail) custom.detail.handled = true;
-        setActiveApp(null);
-        setActiveChatSession(null);
-        setOpenFolderId(null);
-        return;
-      }
-      if (openFolderId !== null) {
-        if (custom.detail) custom.detail.handled = true;
-        setOpenFolderId(null);
-      }
-    };
-    window.addEventListener("floatphone-native-back", handleNativeBack);
-    return () => window.removeEventListener("floatphone-native-back", handleNativeBack);
-  }, [activeApp, openFolderId]);
   const [customAppLaunchContext, setCustomAppLaunchContext] = useState<CustomAppLaunchState | null>(null);
   const [appMarketLaunchContext, setAppMarketLaunchContext] = useState<Record<string, unknown> | null>(null);
   useEffect(() => {
@@ -2697,7 +2625,7 @@ html,body{margin:0;padding:0;width:100%;height:100%;background:#121110;color:rgb
     const handler = (e: Event) => {
       const sessionId = (e as CustomEvent<{ sessionId?: string }>).detail?.sessionId;
       if (!sessionId) return;
-      window.setTimeout(() => { void requestBackgroundChatReply(sessionId, { channel: "call_end" }); }, 0);
+      window.setTimeout(() => { void requestBackgroundChatReply(sessionId); }, 0);
     };
     window.addEventListener("chat-call-ended", handler);
     return () => window.removeEventListener("chat-call-ended", handler);
@@ -3940,6 +3868,27 @@ html,body{margin:0;padding:0;width:100%;height:100%;background:#121110;color:rgb
     swipeLayerRef.current?.style.setProperty("--swipe-drag", `${px}px`);
   }, []);
 
+  useEffect(() => {
+    const handle = (event: Event) => {
+      if (activeApp || editMode) return;
+      const d = (event as CustomEvent<{ widgetId: string; phase: string; dx: number }>).detail;
+      if (!d || !currentPageWidgets.some(w => w.id === d.widgetId)) return;
+      const page = currentPageIndexRef.current, width = getSwipePageWidth();
+      if (d.phase === "move") {
+        swipeLayerRef.current?.classList.add("phone-swipe-dragging");
+        const dx = (page === 0 && d.dx > 0) || (page === pageCount - 1 && d.dx < 0) ? d.dx * .25 : d.dx;
+        setSwipeDrag(Math.max(-width, Math.min(width, dx)));
+      } else {
+        swipeLayerRef.current?.classList.remove("phone-swipe-dragging"); setSwipeDrag(0);
+        if (d.phase === "end" && Math.abs(d.dx) > Math.max(SWIPE_MIN_THRESHOLD, width * SWIPE_THRESHOLD_RATIO)) {
+          setCurrentPageIndex(Math.max(0, Math.min(pageCount - 1, page + (d.dx < 0 ? 1 : -1))));
+        }
+      }
+    };
+    window.addEventListener("desktop-diy-swipe", handle);
+    return () => { window.removeEventListener("desktop-diy-swipe", handle); swipeLayerRef.current?.classList.remove("phone-swipe-dragging"); setSwipeDrag(0); };
+  }, [activeApp, editMode, currentPageWidgets, pageCount, getSwipePageWidth, setSwipeDrag]);
+
   const handleSwipeStart = useCallback((e: React.PointerEvent) => {
     if (activeApp) return;
     if (editMode && editDragRef.current) return;
@@ -4118,43 +4067,6 @@ html,body{margin:0;padding:0;width:100%;height:100%;background:#121110;color:rgb
     if (targetPageIndex !== page) setCurrentPageIndex(targetPageIndex);
   }, [editMode, getSwipePageWidth, pageCount, setSwipeDrag]);
 
-  // A canceled pointer (including rotation/OS gesture takeover) must not be treated
-  // as a completed swipe. Clear the transient translate so the desktop cannot get stuck.
-  const handleSwipeCancel = useCallback((e: React.PointerEvent) => {
-    const drag = editDragRef.current;
-    if (drag && drag.pointerId === e.pointerId) {
-      handleSwipeEnd(e);
-      return;
-    }
-    if (swipeRef.current.pointerId === e.pointerId) {
-      swipeRef.current.pointerId = null;
-      swipeRef.current.deltaX = 0;
-      swipeRef.current.locked = null;
-      setSwipeDrag(0);
-    }
-    cancelLongPress();
-    swipeLayerRef.current?.classList.remove("phone-swipe-dragging");
-  }, [handleSwipeEnd, setSwipeDrag]);
-
-  // Android may emit resize/orientationchange while a pointer is captured. Reset stale
-  // gesture state so the next horizontal swipe starts cleanly after returning upright.
-  useEffect(() => {
-    const resetSwipeAfterRotation = () => {
-      if (editDragRef.current?.active) return;
-      swipeRef.current.pointerId = null;
-      swipeRef.current.deltaX = 0;
-      swipeRef.current.locked = null;
-      setSwipeDrag(0);
-      swipeLayerRef.current?.classList.remove("phone-swipe-dragging");
-    };
-    window.addEventListener("orientationchange", resetSwipeAfterRotation);
-    window.addEventListener("resize", resetSwipeAfterRotation);
-    return () => {
-      window.removeEventListener("orientationchange", resetSwipeAfterRotation);
-      window.removeEventListener("resize", resetSwipeAfterRotation);
-    };
-  }, [setSwipeDrag]);
-
   const handleCloseXiaohongshu = useCallback((isBusy?: boolean) => {
     const shouldKeepMounted = isBusy ?? xiaohongshuBusy;
     setActiveApp(null);
@@ -4177,7 +4089,6 @@ html,body{margin:0;padding:0;width:100%;height:100%;background:#121110;color:rgb
     setShoppingMounted(false);
   }, [shoppingBusy]);
 
-  /** 内置「通话统计」：1:1 复用 call.stats 2.1.0 的 HTML，由 CustomAppRunner 挂载。 */
   const CALL_STATS_BUILTIN_APP: InstalledCustomApp = {
     id: "callstats-builtin",
     name: "通话统计",
@@ -4207,95 +4118,6 @@ html,body{margin:0;padding:0;width:100%;height:100%;background:#121110;color:rgb
     }
     setActiveApp(null);
   }
-
-  // Android-style system back gesture for every foreground app. Nested pages can
-  // consume "phone-swipe-back" first (e.g. the workshop's GitHub settings sheet);
-  // otherwise the active app is closed/returned using the same app-specific path
-  // as its close button.
-  useEffect(() => {
-    const cancelGesture = () => { swipeBackGestureRef.current = null; };
-    const isGestureExcluded = (target: EventTarget | null) => {
-      if (!(target instanceof Element)) return false;
-      return Boolean(target.closest(
-        'input, textarea, select, [contenteditable="true"], video, audio, canvas, [data-swipe-back-ignore], .watch-player, .chat-gallery-preview, .chat-photo-carousel-stack, .photo-wall-surface, [data-photo-wall-viewport]'
-      ));
-    };
-    const onPointerDown = (event: PointerEvent) => {
-      if (event.pointerType !== "touch" || !event.isPrimary || event.button !== 0) return;
-      const edge: "left" | "right" | null = event.clientX <= 24
-        ? "left"
-        : event.clientX >= window.innerWidth - 24
-          ? "right"
-          : null;
-      if (!activeAppRef.current || !edge || isGestureExcluded(event.target)) {
-        swipeBackGestureRef.current = null;
-        return;
-      }
-      swipeBackGestureRef.current = {
-        pointerId: event.pointerId,
-        startX: event.clientX,
-        startY: event.clientY,
-        edge,
-        horizontal: false,
-      };
-    };
-    const onPointerMove = (event: PointerEvent) => {
-      const gesture = swipeBackGestureRef.current;
-      if (!gesture || gesture.pointerId !== event.pointerId) return;
-      const dx = event.clientX - gesture.startX;
-      const dy = event.clientY - gesture.startY;
-      const towardCenter = gesture.edge === "left" ? dx : -dx;
-      if (!gesture.horizontal) {
-        if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
-        if (Math.abs(dy) > Math.abs(dx) * 1.15 || towardCenter <= 0) {
-          cancelGesture();
-          return;
-        }
-        gesture.horizontal = true;
-      }
-      if (towardCenter > 12 && event.cancelable) event.preventDefault();
-    };
-    const onPointerUp = (event: PointerEvent) => {
-      const gesture = swipeBackGestureRef.current;
-      if (!gesture || gesture.pointerId !== event.pointerId) return;
-      swipeBackGestureRef.current = null;
-      const dx = event.clientX - gesture.startX;
-      const dy = event.clientY - gesture.startY;
-      const towardCenter = gesture.edge === "left" ? dx : -dx;
-      if (!gesture.horizontal || towardCenter < Math.max(76, window.innerWidth * 0.18) || towardCenter < Math.abs(dy) * 1.35) return;
-      const currentApp = activeAppRef.current;
-      if (!currentApp) return;
-      const backEvent = new Event("phone-swipe-back", { cancelable: true });
-      document.dispatchEvent(backEvent);
-      if (backEvent.defaultPrevented) return;
-      const customApp = getCustomAppForIcon(currentApp);
-      if (customApp) {
-        closeCustomAppRunner(customApp);
-        return;
-      }
-      if (currentApp === "chat") {
-        setActiveChatSession(null);
-        setChatInitSessionId(null);
-      }
-      setActiveApp(null);
-    };
-    const onPointerCancel = (event: PointerEvent) => {
-      if (swipeBackGestureRef.current?.pointerId === event.pointerId) cancelGesture();
-    };
-    window.addEventListener("pointerdown", onPointerDown, true);
-    window.addEventListener("pointermove", onPointerMove, { capture: true, passive: false });
-    window.addEventListener("pointerup", onPointerUp, true);
-    window.addEventListener("pointercancel", onPointerCancel, true);
-    window.addEventListener("blur", cancelGesture);
-    return () => {
-      window.removeEventListener("pointerdown", onPointerDown, true);
-      window.removeEventListener("pointermove", onPointerMove, true);
-      window.removeEventListener("pointerup", onPointerUp, true);
-      window.removeEventListener("pointercancel", onPointerCancel, true);
-      window.removeEventListener("blur", cancelGesture);
-      cancelGesture();
-    };
-  }, [getCustomAppForIcon, customAppLaunchContext]);
 
   function dismissPendingCustomAppUpdate(): void {
     if (customAppUpdateBusy || !customAppUpdatePrompt) return;
@@ -4364,6 +4186,27 @@ html,body{margin:0;padding:0;width:100%;height:100%;background:#121110;color:rgb
             app={customApp}
             launchContext={customAppLaunchContext?.appId === customApp.id ? customAppLaunchContext.context : null}
             onClose={() => closeCustomAppRunner(customApp)}
+            onNotice={setNotice}
+          />
+        </CustomAppForegroundBoundary>
+      );
+    }
+
+    if (activeApp === "archive") return <ArchiveRoomApp onClose={() => setActiveApp(null)} onNotice={setNotice}/>;
+    if (activeApp === "watchtogether") return <WatchTogetherApp onClose={() => setActiveApp(null)} onNotice={setNotice}/>;
+    if (activeApp === "callstats") {
+      return (
+        <CustomAppForegroundBoundary
+          key={CALL_STATS_BUILTIN_APP.id}
+          appName={CALL_STATS_BUILTIN_APP.name}
+          appId={CALL_STATS_BUILTIN_APP.id}
+          appVersion={CALL_STATS_BUILTIN_APP.version}
+          manifestId={CALL_STATS_BUILTIN_APP.manifest?.id}
+          onClose={() => setActiveApp(null)}
+        >
+          <CustomAppRunner
+            app={CALL_STATS_BUILTIN_APP}
+            onClose={() => setActiveApp(null)}
             onNotice={setNotice}
           />
         </CustomAppForegroundBoundary>
@@ -4486,29 +4329,6 @@ html,body{margin:0;padding:0;width:100%;height:100%;background:#121110;color:rgb
 
     if (activeApp === "story") {
       return <StoryApp onClose={() => setActiveApp(null)} />;
-    }
-
-    if (activeApp === "archive") {
-      return <ArchiveRoomApp onClose={() => setActiveApp(null)} onNotice={setNotice} />;
-    }
-
-    if (activeApp === "callstats") {
-      return (
-        <CustomAppForegroundBoundary
-          key={CALL_STATS_BUILTIN_APP.id}
-          appName={CALL_STATS_BUILTIN_APP.name}
-          appId={CALL_STATS_BUILTIN_APP.id}
-          appVersion={CALL_STATS_BUILTIN_APP.version}
-          manifestId={CALL_STATS_BUILTIN_APP.manifest?.id}
-          onClose={() => setActiveApp(null)}
-        >
-          <CustomAppRunner
-            app={CALL_STATS_BUILTIN_APP}
-            onClose={() => setActiveApp(null)}
-            onNotice={setNotice}
-          />
-        </CustomAppForegroundBoundary>
-      );
     }
 
     if (activeApp === "vnmode") {
@@ -4928,7 +4748,7 @@ html,body{margin:0;padding:0;width:100%;height:100%;background:#121110;color:rgb
                 onPointerDown={handleSwipeStart}
                 onPointerMove={handleSwipeMove}
                 onPointerUp={handleSwipeEnd}
-                onPointerCancel={handleSwipeCancel}
+                onPointerCancel={handleSwipeEnd}
               >
                 {/* Edit mode Done button */}
                 {editMode && !activeApp && (
@@ -5025,24 +4845,15 @@ html,body{margin:0;padding:0;width:100%;height:100%;background:#121110;color:rgb
                                       justifySelf: "start",
                                       alignSelf: "start",
                                       marginLeft: "var(--slot-icon-offset-x)",
-                                      position: "relative",
                                     }}
-                                  >
-                                    <span className="drop-position-label" style={{ position: "absolute", zIndex: 3, top: 2, left: 2, padding: "2px 5px", borderRadius: 6, background: "var(--c-accent, #8b5cf6)", color: "#fff", fontSize: 9, lineHeight: 1.3, whiteSpace: "nowrap", pointerEvents: "none" }}>
-                                      第{dropTarget.row}行 · 第{dropTarget.col}列
-                                    </span>
-                                  </div>
+                                  />
                                 );
                               }
                               return (
                                 <div
                                   className="drop-indicator"
-                                  style={{ gridRow: dropTarget.row, gridColumn: dropTarget.col, position: "relative" }}
-                                >
-                                  <span className="drop-position-label" style={{ position: "absolute", zIndex: 3, top: 2, left: 2, padding: "2px 5px", borderRadius: 6, background: "var(--c-accent, #8b5cf6)", color: "#fff", fontSize: 9, lineHeight: 1.3, whiteSpace: "nowrap", pointerEvents: "none" }}>
-                                    第{dropTarget.row}行 · 第{dropTarget.col}列
-                                  </span>
-                                </div>
+                                  style={{ gridRow: dropTarget.row, gridColumn: dropTarget.col }}
+                                />
                               );
                             })()}
 
@@ -5223,7 +5034,7 @@ html,body{margin:0;padding:0;width:100%;height:100%;background:#121110;color:rgb
                   style={{ "--dock-count": Math.max(1, dock.length) } as CSSProperties}
                   onPointerMove={handleSwipeMove}
                   onPointerUp={handleSwipeEnd}
-                  onPointerCancel={handleSwipeCancel}
+                  onPointerCancel={handleSwipeEnd}
                 >
                   {dockSkinUrl && (
                     <span className="dock-skin-layer" style={{ backgroundImage: `url("${dockSkinUrl}")` }} />

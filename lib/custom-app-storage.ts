@@ -1053,17 +1053,7 @@ export function loadCustomAppTimelineEntries(
   options?: { afterTimestamp?: string },
 ): CustomAppTimelineEntry[] {
   const installed = loadInstalledCustomApps();
-  // Native modules also write to the shared custom-app timeline store. They are
-  // not necessarily present in the user's installed-custom-app registry.
-  const timelineAppIds = new Set([
-    ...installed.map(app => app.id),
-    "life",
-    "watch",
-    "photo_wall",
-    "phone_widget",
-    "global_watch",
-  ]);
-  const entries = [...timelineAppIds].flatMap(appId => loadCustomAppTimelineForApp(appId));
+  const entries = installed.flatMap(app => loadCustomAppTimelineForApp(app.id));
   return entries
     .filter(entry => !characterId || entry.characterId === characterId)
     .filter(entry => !options?.afterTimestamp || entry.createdAt > options.afterTimestamp)

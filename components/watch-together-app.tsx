@@ -17,6 +17,7 @@ import { analyzeWholeVideoWithGemini } from "@/lib/gemini-video-understanding";
 
 /** 自动搭话的每日上限：护栏，避免暂停/挂机时白烧 API。 */
 const WATCH_AUTO_DAILY_LIMIT = 24;
+const SERVER_VIDEO_CACHE_ENABLED = process.env.NEXT_PUBLIC_ENABLE_SERVER_VIDEO_CACHE === "true";
 const WATCH_AUTO_DAY_KEY = "ai_phone_watch_auto_day_v1";
 
 function readWatchAutoCount(): number {
@@ -966,7 +967,7 @@ export function WatchTogetherApp({ onClose, onNotice }: Props) {
       // 用户选择：配置了本地解析就优先本地，官方播放器/短链只做兜底。
       // 本地直连流才能让 AI 截帧；官方 iframe 跨域读不到画面。
       if (localEligible) plan.push({ key: "local", label: "本地解析服务（优先）", state: "pending" });
-      if (parsed.platform === "xiaohongshu") plan.push({ key: "builtin", label: "站内解析（下载到本机缓存）", state: "pending" });
+      if (SERVER_VIDEO_CACHE_ENABLED && parsed.platform === "xiaohongshu") plan.push({ key: "builtin", label: "站内解析（下载到本机缓存）", state: "pending" });
       if (parsed.platform === "bilibili" && parsed.url.includes("b23.tv")) plan.push({ key: "shortlink", label: "把短链接换算成 B 站播放器", state: "pending" });
     }
     if (parsed.platform === "douyin" || parsed.platform === "kuaishou") {
@@ -980,7 +981,7 @@ export function WatchTogetherApp({ onClose, onNotice }: Props) {
       setResolveSteps(previous => previous.map(item => item.key === key ? { ...item, state, detail: detail ?? item.detail } : item));
     // ① 站内内置解析（自部署零配置、同源缓存可截帧）：目前只支持小红书。
     //    同一视频按 URL 哈希命中缓存，第二次播放秒开。
-    if (!parsed.nativeVideo && !goodEmbed && parsed.platform === "xiaohongshu") {
+    if (SERVER_VIDEO_CACHE_ENABLED && !parsed.nativeVideo && !goodEmbed && parsed.platform === "xiaohongshu") {
       const seq = ++openVideoSeqRef.current;
       markStep("builtin", "active");
       try {

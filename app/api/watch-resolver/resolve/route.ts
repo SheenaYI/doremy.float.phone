@@ -12,6 +12,7 @@ export const dynamic = "force-dynamic";
  * 失败时前端会自动回退外部解析服务或官方嵌入。
  */
 export async function POST(req: NextRequest) {
+    if (process.env.NETLIFY || process.env.WATCH_SERVER_CACHE_ENABLED !== "true") return NextResponse.json({ ok: false, error: "当前部署未启用服务端视频缓存，请使用官方播放器、本地视频或外部解析服务。" }, { status: 501 });
     try {
         const { url } = await req.json() as { url?: string };
         if (!url || typeof url !== "string" || !/^https?:\/\//i.test(url)) {

@@ -1740,3 +1740,45 @@
 @media (prefers-reduced-motion: reduce) {
   .vnc-satellite { animation: none; }
 }
+
+/* Dialogue and status share one layout column; controls keep their own safe area. */
+.vn-dialogue { padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 68px); max-height: calc(100% - var(--page-header-safe-top, 48px) - 90px); display:flex; flex-direction:column; }
+.vn-dialogue-inner { min-height:100px; overflow-y:auto; flex:1 1 auto; overscroll-behavior:contain; }
+.vn-status-drawer { flex:0 1 auto; width:100%; color:var(--vn-text-color, #f4eee6); background:var(--vn-box-bg); border:1px solid var(--vn-box-border); border-radius:0 0 var(--vn-box-radius) var(--vn-box-radius); overflow:hidden; }
+.vn-status-drawer-heading { display:flex; min-height:30px; align-items:center; }
+.vn-status-drawer-heading button { color:inherit; background:transparent; border:0; padding:6px 12px; display:flex; gap:8px; align-items:center; }
+.vn-status-drawer-heading button:first-child { flex:1; justify-content:space-between; font-size:11px; }
+.vn-status-drawer-body { max-height:min(24dvh, 190px); overflow:auto; overscroll-behavior:contain; padding:8px 12px; font-size:12px; }
+.vn-status-drawer-field { display:flex; align-items:center; flex-wrap:wrap; gap:8px; margin:5px 0; }
+.vn-status-drawer-field progress { width:80px; height:5px; }
+.vn-map { color:var(--vn-text-color, #f2ede7); background:var(--vn-ui-panel, #191b23); display:flex; flex-direction:column; min-height:0; }
+.vn-map-full { position:absolute; inset:0; z-index:80; padding-top:var(--page-header-safe-top, 48px); padding-bottom:env(safe-area-inset-bottom); }
+.vn-map-editor { border-radius:16px; overflow:hidden; min-height:420px; }
+.vn-map-header, .vn-tool-panel header { display:flex; align-items:center; gap:12px; padding:12px; flex-shrink:0; }
+.vn-map-header strong, .vn-tool-panel h2 { flex:1; margin:0; font-size:16px; }
+.vn-map button, .vn-tool-panel button { display:inline-flex; align-items:center; justify-content:center; gap:6px; color:inherit; background:var(--vn-ui-input, rgba(128,128,128,.16)); border:1px solid var(--vn-box-border, rgba(128,128,128,.3)); padding:8px 12px; border-radius:8px; min-height:36px; cursor:pointer; }
+.vn-map button:disabled, .vn-tool-panel button:disabled { opacity:.45; cursor:default; }
+.vn-map-tools, .vn-map-fields { display:flex; align-items:center; flex-wrap:wrap; gap:8px; padding:10px 12px; }
+.vn-map label, .vn-tool-panel label { display:flex; flex-direction:column; gap:6px; font-size:12px; }
+.vn-map input, .vn-map select, .vn-tool-panel input, .vn-tool-panel textarea { width:100%; min-width:0; background:var(--c-bg, #242630); color:inherit; border:1px solid var(--vn-box-border, #686572); border-radius:6px; padding:8px; font:inherit; }
+.vn-map-viewport { flex:1; min-height:150px; overflow:auto; overscroll-behavior:contain; }
+.vn-map-canvas { position:relative; min-height:250px; width:100%; }
+.vn-map-canvas>img { width:100%; height:auto; display:block; user-select:none; }
+.vn-map button.vn-map-pin { position:absolute; transform:translate(-50%,-50%); padding:4px; border:0; background:transparent; color:white; max-width:65%; text-shadow:0 2px 4px #111; }
+.vn-map-pin svg { fill:#e45b83; stroke:white; flex-shrink:0; }
+.vn-map-pin span { background:rgba(15,18,30,.78); padding:5px 9px; border-radius:3px; font-family:var(--vn-font-family, inherit); overflow-wrap:anywhere; }
+.vn-map-pin[data-selected] { outline:2px solid #e9c88f; outline-offset:3px; }
+.vn-map-list { display:flex; flex-wrap:wrap; gap:12px; padding:20px; overflow:auto; }
+.vn-tool-panel { width:min(100%, 600px); height:100%; margin-left:auto; overflow:auto; overscroll-behavior:contain; padding:var(--page-header-safe-top, 48px) 18px 24px; color:var(--vn-text-color, #eee8e2); background:var(--vn-box-bg, #191b23); display:flex; flex-direction:column; gap:16px; }
+.vn-tool-panel h3, .vn-tool-panel p { margin:0; }
+.vn-tool-panel p { font-size:12px; line-height:1.7; }
+.vn-tool-panel nav, .vn-tool-row { display:flex; gap:8px; flex-wrap:wrap; }
+.vn-tool-row>label { flex:1; min-width:100px; }
+.vn-tool-panel button[aria-pressed=true] { border-color:#d5b98e; }
+.vn-round-bubbles { display:flex; flex-direction:column; gap:14px; }
+.vn-round-bubble { background:var(--vn-ui-input, rgba(128,128,128,.16)); padding:14px; border-radius:14px; max-width:95%; }
+.vn-round-bubble strong { font-size:12px; display:block; margin-bottom:6px; }
+.vn-round-bubble p, .vn-round-narration p { white-space:pre-wrap; font-size:14px; }
+.vn-round-narration { padding:6px 10px; }
+.vn-tool-panel pre { white-space:pre-wrap; overflow-wrap:anywhere; font-size:11px; }
+.vn-map button:focus-visible, .vn-tool-panel button:focus-visible, .vn-status-drawer button:focus-visible { outline:2px solid #d5b98e; outline-offset:2px; }

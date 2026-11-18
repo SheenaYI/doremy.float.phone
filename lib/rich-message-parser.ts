@@ -172,11 +172,7 @@ const RICH_PATTERNS: {
         build: (m) => ({
             content: "",
             mediaType: "image",
-            mediaData: {
-            label: m[2].trim(),
-            useReferenceImage: m[1] === "使用参考图",
-            disableReferenceImage: m[1] === "不使用参考图",
-        },
+            mediaData: { label: m[2].trim(), useReferenceImage: m[1] === "使用参考图" },
         }),
     },
     {
@@ -188,9 +184,7 @@ const RICH_PATTERNS: {
                 mediaType: "image",
                 mediaData: {
                     label,
-                    // Generic photo requests automatically use saved identity refs. Selfies explicitly
-                    // remain reference-enabled for imported prompts and older clients.
-                    useReferenceImage: /(?:自拍|对镜拍|selfie)/i.test(label) ? true : undefined,
+                    useReferenceImage: /(?:自拍|对镜拍|selfie)/i.test(label),
                 },
             };
         },

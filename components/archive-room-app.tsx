@@ -4,8 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import JSZip from "jszip";
 import { Archive, ArrowLeft, AudioLines, Check, File, Image as ImageIcon, LoaderCircle, RefreshCw, Search, Trash2, Video, X, Copy, HardDrive, ShieldAlert, Star } from "lucide-react";
 import { deleteMediaRef, listMediaCacheSummaries, loadMediaBlob, loadMediaObjectUrl, type MediaCacheSummary } from "@/lib/media-cache-storage";
-import { loadChatSessions, loadChatMessages } from "@/lib/chat-storage";
-import { loadPhotoWallState } from "@/lib/photo-wall-storage";
+import { readArchiveMediaReferences } from "@/lib/archive-media-references";
 
 type ArchiveItem = MediaCacheSummary & { ref: string; usedBy: string[]; objectUrl?: string };
 type ArchiveMeta = { label?: string; note?: string; favorite?: boolean };
@@ -77,25 +76,13 @@ export function ArchiveRoomApp({ onClose, onNotice }: Props) {
     setLoading(true);
     try {
       const summaries = await listMediaCacheSummaries();
-      const sessions = loadChatSessions();
-      const used = new Map<string, Set<string>>();
-      for (const session of sessions) {
-        for (const msg of loadChatMessages(session.id)) {
-          const refs = [msg.mediaUrl, ...(Array.isArray(msg.mediaData?.imageRefs) ? msg.mediaData.imageRefs as string[] : [])];
-          for (const ref of refs) {
-            if (typeof ref !== "string" || !ref.startsWith("media-store://")) continue;
-            const id = ref.slice("media-store://".length);
-            if (!used.has(id)) used.set(id, new Set());
-            used.get(id)!.add(session.groupName || session.alias || session.contactId || session.id);
-          }
-        }
-      }
-      // Include photo wall references too: archive cleanup must not silently break a saved photo.
-      for (const photo of loadPhotoWallState().photos) {
-        if (!photo.mediaRef.startsWith("media-store://")) continue;
-        const id = photo.mediaRef.slice("media-store://".length);
-        if (!used.has(id)) used.set(id, new Set());
-        used.get(id)!.add(`照片墙：${photo.title || "未命名照片"}`);
+      let used: Map<string, Set<string>>;
+      try { used = await readArchiveMediaReferences(); }
+      catch {
+        // Browsing/exporting remains available when reference discovery is unsupported.
+        // Mark every file as protected; deletion rechecks references independently.
+        used = new Map(summaries.map(item => [item.id, new Set(["引用尚未完整检查"])]));
+        onNotice?.("媒体可正常查看和导出；当前环境未能完整检查引用，暂不删除文件。");
       }
       setItems(summaries.map(item => ({ ...item, ref: refFor(item.id), usedBy: [...(used.get(item.id) || [])] })).sort((a, b) => b.createdAt - a.createdAt));
       setSelected([]);
@@ -273,15 +260,14 @@ export function ArchiveRoomApp({ onClose, onNotice }: Props) {
     const targets = items.filter(item => selected.includes(item.id));
     const favorited = targets.filter(item => meta[item.id]?.favorite === true);
     if (favorited.length) { onNotice?.(`所选项目中有 ${favorited.length} 个已收藏文件；为防止误删，已阻止本次删除。请取消收藏后再操作。`); setConfirmDelete(false); return; }
-    const photoWallProtected = targets.filter(item => item.usedBy.some(name => name.startsWith("照片墙：")));
-    if (photoWallProtected.length) {
-      onNotice?.(`所选项目中有 ${photoWallProtected.length} 个仍被照片墙使用。请先在照片墙中移除对应照片，再清理媒体文件，避免留下失效记录。`);
-      return;
-    }
-    const referenced = targets.filter(item => item.usedBy.length > 0);
+    let used: Map<string, Set<string>>;
+    try { used = await readArchiveMediaReferences(); }
+    catch { onNotice?.("无法完整检查引用，本次未删除。请刷新后重试。"); return; }
+    const referenced = targets.filter(item => (used.get(item.id)?.size ?? 0) > 0);
+    if (referenced.length) { onNotice?.(`其中 ${referenced.length} 个文件仍被存档引用，请先在对应应用移除引用。`); return; }
     if ((referenced.length || targets.length > 1) && !confirmDelete) {
       setConfirmDelete(true);
-      onNotice?.(`准备删除 ${targets.length} 个媒体文件${referenced.length ? `，其中 ${referenced.length} 个仍被聊天消息引用` : ""}。再次点击确认后才会执行；引用媒体可能无法显示。收藏项不会被删除。`);
+      onNotice?.(`准备删除 ${targets.length} 个媒体文件${referenced.length ? `，其中 ${referenced.length} 个仍被存档引用` : ""}。再次点击确认后才会执行；引用媒体可能无法显示。收藏项不会被删除。`);
       return;
     }
     try {

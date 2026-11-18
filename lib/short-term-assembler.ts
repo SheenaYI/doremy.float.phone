@@ -1,9 +1,10 @@
+import { measureSync } from "./performance-diagnostics";
 // lib/short-term-assembler.ts
 // Reads native app data (chat messages, moments posts/comments) and provides
 // a unified timeline. Replaces the old ShortTermEvent IndexedDB approach.
 // Used by: memory-bank-page (UI display), memory-summarizer (summarization input).
 
-import { getSystemInstructionPromptContent, isReadingDiscussMessage, isSystemInstructionMessage, loadChatSessions, loadAllChatMessages, compareChatMessages, resolveSessionCharacterId, type ChatMessage } from "./chat-storage";
+import { getSystemInstructionPromptContent, isReadingDiscussMessage, isSystemInstructionMessage, loadChatSessions, loadAllChatMessages, loadChatMessages, compareChatMessages, type ChatMessage } from "./chat-storage";
 import { buildGroupAdminBracketText } from "./group-admin";
 import { loadMomentPosts, loadMomentComments } from "./moments-storage";
 import { loadCharacters } from "./character-storage";
@@ -11,7 +12,6 @@ import { resolveUserIdentity } from "./settings-storage";
 import { loadMemoryConfig } from "./memory-storage";
 import type { MemoryConfig } from "./memory-types";
 import { estimateTokens } from "./token-counter";
-import { recordPerformanceMetric } from "./performance-diagnostics";
 import { loadStoryProjectionEntries } from "./story-storage";
 import { buildTwoLevelMomentThreads } from "./moments-comment-threading";
 import { loadVnProjectionEntries } from "./vn-storage";
@@ -20,9 +20,6 @@ import { loadGameProjectionEntries } from "./game-storage";
 import { loadDiaryEntries } from "./diary-entry-storage";
 import { loadCalendarDayRecords } from "./calendar-day-storage";
 import { getCalendarDailyMoodMeta, type CalendarDayRecord } from "./calendar-day-types";
-import { loadVirtualLifeState } from "./life/life-storage";
-import { loadPhotoWallState } from "./photo-wall-storage";
-import { asPlayerRecordSubject } from "./life/life-timeline-subject";
 import type { DiaryEntry, DiaryEntryBlock } from "./diary-entry-types";
 import { loadNoteWallProjectionEntries } from "./notewall-memory";
 import { loadXiaohongshuProjectionEntries } from "./xiaohongshu-memory";
@@ -57,8 +54,8 @@ function formatPhotoDirectiveForPrompt(msg: ChatMessage): string {
 
 export type NativeTimelineEntry = {
     id: string;
-    sourceApp: "chat" | "moments" | "story" | "vn" | "map" | "game" | "diary" | "calendar" | "xiaohongshu" | "interview_magazine" | "cocreate" | "checkphone" | "custom_app" | "photo_wall" | "life" | "phone_widget" | "watch" | "global_watch";
-    sourceDetail?: "direct" | "group" | "system" | "story" | "chat_offline" | "game" | "diary_entry" | "notewall" | "calendar_day" | "xiaohongshu" | "black_market_theater" | "interview_issue" | "interview_shared_issue" | "cocreate_project" | "checkphone" | "custom_app_event" | "life_shared_event" | "photo_wall_creation"; // chat sub-type: 1:1 vs group chat vs system note
+    sourceApp: "chat" | "moments" | "story" | "vn" | "map" | "game" | "diary" | "calendar" | "xiaohongshu" | "interview_magazine" | "cocreate" | "checkphone" | "custom_app";
+    sourceDetail?: "direct" | "group" | "system" | "story" | "chat_offline" | "game" | "diary_entry" | "notewall" | "calendar_day" | "xiaohongshu" | "black_market_theater" | "interview_issue" | "interview_shared_issue" | "cocreate_project" | "checkphone" | "custom_app_event"; // chat sub-type: 1:1 vs group chat vs system note
     authorType?: "user" | "character" | "npc"; // who authored this entry
     postAuthorType?: "user" | "character"; // for moments: who owns the parent post
     sessionId?: string;
@@ -182,65 +179,26 @@ function formatDiaryEntryForTimeline(entry: DiaryEntry, timeAware: boolean, time
  * @param characterId - The character to load data for
  * @param options.afterTimestamp - Only include entries after this ISO timestamp
  */
-/**
- * 预算感知的尾部裁剪：只保留最近大约 budget token 的 messages。
- *
- * 最终装配会从最旧开始截断到 shortTermTokenBudget，所以这里多留 20% 余量后
- * 丢掉的消息本来也不会进入提示词；但它能避免每次生成都对全部历史做
- * 正则清洗、时间戳格式化和 token 估算（数据多时这正是点击生成后卡顿的来源）。
- */
-function trimMessagesToTailTokenBudget<T extends { content: string }>(messages: T[], budget: number): T[] {
-    if (!Number.isFinite(budget) || budget <= 0 || messages.length === 0) return messages;
-    const limit = budget * 1.2;
-    let total = 0;
-    let start = messages.length;
-    for (let i = messages.length - 1; i >= 0; i--) {
-        const cost = estimateTokens(messages[i].content) + 4;
-        if (total > 0 && total + cost > limit) break;
-        total += cost;
-        start = i;
-    }
-    return start <= 0 ? messages : messages.slice(start);
-}
-
-/** 历史专用：只把真正会进入 pool 的可见消息计入预算，隐藏的工具轮不占额度。
- *  仍然从尾部向前扫，但隐藏消息只做廉价字段判断，不做正则/分词。 */
-function trimHistoryToTailTokenBudget(
-    history: ChatMessage[],
-    budget: number,
-    includeNativeToolHistory?: boolean,
-): ChatMessage[] {
-    if (!Number.isFinite(budget) || budget <= 0 || history.length === 0) return history;
-    const limit = budget * 1.2;
-    let total = 0;
-    let start = history.length;
-    for (let i = history.length - 1; i >= 0; i--) {
-        const message = history[i];
-        if (isPromptHiddenChatMessage(message, { includeNativeToolHistory })) {
-            start = i;
-            continue;
-        }
-        const cost = estimateTokens(message.content) + 4;
-        if (total > 0 && total + cost > limit) break;
-        total += cost;
-        start = i;
-    }
-    return start <= 0 ? history : history.slice(start);
+/** Each visible history item costs at least four tokens. Older items cannot survive
+ * once a newer history suffix alone exceeds the budget. Keep equal timestamps. */
+function historyBudgetCutoff(history: ChatMessage[], budget: number, includeNativeToolHistory?: boolean): string | undefined {
+    if (!Number.isFinite(budget) || budget <= 0) return undefined;
+    const visible = history.filter(m => !isPromptHiddenChatMessage(m, { includeNativeToolHistory }));
+    const count = Math.floor(budget / 4) + 1;
+    if (visible.length < count || visible.some(m => !Number.isFinite(Date.parse(m.createdAt)))) return undefined;
+    visible.sort((a, b) => compareTimelineTimestamps(a.createdAt, b.createdAt));
+    return visible[visible.length - count].createdAt;
 }
 
 export function loadNativeTimeline(
     characterId: string,
     options?: {
+        promptCutoffTimestamp?: string;
+        directPreviewOnly?: boolean;
         afterTimestamp?: string;
         userName?: string;
         appId?: import("./settings-types").ContentAppId;
         excludeOfflineSessionId?: string;
-        memoryTarget?: "short_term" | "long_term" | "core";
-        /**
-         * 只格式化最近约这么多 token 的消息。装配阶段从最旧开始截断，
-         * 更早的内容本来就不会进入提示词；不设则扫描全部（记忆总结/档案页用）。
-         */
-        scanTokenBudget?: number;
         timeAware?: boolean;
         promptTimestampOptions?: PromptTimestampOptions;
     }
@@ -255,31 +213,27 @@ export function loadNativeTimeline(
     // ── Chat messages ──
     const sessions = loadChatSessions();
     // Include direct chat session AND group sessions where this character participates
-    const session = sessions.find(s => !s.isGroup && resolveSessionCharacterId(s) === characterId);
+    const session = sessions.find(s => !s.isGroup && s.contactId === characterId);
     const groupSessions = sessions.filter(s => s.isGroup && s.participantIds?.includes(characterId));
 
-    // 每个会话都调 loadChatMessages 会把「全库消息」过滤一遍再排序，群聊一多就是
-    // O(会话数 × 总消息数)。这里只扫一遍全库、按本次真正用到的会话分桶，再各自排序。
-    const targetSessionIds = new Set<string>();
-    if (session) targetSessionIds.add(session.id);
-    for (const gs of groupSessions) targetSessionIds.add(gs.id);
-    const messagesBySession = new Map<string, ChatMessage[]>();
-    for (const msg of loadAllChatMessages()) {
-        if (!targetSessionIds.has(msg.sessionId)) continue;
-        const bucket = messagesBySession.get(msg.sessionId);
-        if (bucket) bucket.push(msg);
-        else messagesBySession.set(msg.sessionId, [msg]);
-    }
-    for (const bucket of messagesBySession.values()) bucket.sort(compareChatMessages);
-    const messagesOf = (sessionId: string): ChatMessage[] => messagesBySession.get(sessionId) ?? [];
+    // Read existing per-session indexes instead of rescanning every character's history.
+    const messagesOf = (sessionId: string): ChatMessage[] => {
+        const messages = loadChatMessages(sessionId);
+        return options?.promptCutoffTimestamp || options?.directPreviewOnly
+            ? messages.reverse().sort((a, b) => compareTimelineTimestamps(b.createdAt, a.createdAt)) : messages;
+    };
 
     // Process group sessions
     for (const gs of groupSessions) {
-        const messages = trimMessagesToTailTokenBudget(messagesOf(gs.id), (options?.scanTokenBudget ?? 0) * 2);
+        const blockStart = entries.length;
+        const messages = messagesOf(gs.id);
         for (const msg of messages) {
             if (msg.isRetracted) continue;
             if (isPromptHiddenChatMessage(msg)) continue;
             if (options?.afterTimestamp && msg.createdAt <= options.afterTimestamp) continue;
+
+            if (options?.promptCutoffTimestamp && entries.length - blockStart >= 10
+                && compareTimelineTimestamps(msg.createdAt, options.promptCutoffTimestamp) < 0) break;
 
             let sender: string;
             if (msg.role === "user") sender = userName;
@@ -362,11 +316,17 @@ export function loadNativeTimeline(
                 content: `${msgLabel} ${sender}: ${content}`,
             });
         }
+        if (options?.promptCutoffTimestamp || options?.directPreviewOnly) entries.splice(blockStart).reverse().forEach(entry => entries.push(entry));
     }
 
     if (session) {
-        const messages = trimMessagesToTailTokenBudget(messagesOf(session.id), (options?.scanTokenBudget ?? 0) * 2);
+        const blockStart = entries.length;
+        const messages = messagesOf(session.id);
         for (const msg of messages) {
+            if (options?.directPreviewOnly && entries.length - blockStart >= 10) break;
+            if (options?.promptCutoffTimestamp && entries.length - blockStart >= 10
+                && compareTimelineTimestamps(msg.createdAt, options.promptCutoffTimestamp) < 0) break;
+
             if (msg.isRetracted) continue;
             if (isPromptHiddenChatMessage(msg)) continue;
             if (options?.afterTimestamp && msg.createdAt <= options.afterTimestamp) continue;
@@ -481,6 +441,7 @@ export function loadNativeTimeline(
                 content: `${msgLabel} ${sender}: ${content}`,
             });
         }
+        if (options?.promptCutoffTimestamp || options?.directPreviewOnly) entries.splice(blockStart).reverse().forEach(entry => entries.push(entry));
     }
 
     // ── Moments posts & comments (grouped by post) ──
@@ -611,12 +572,10 @@ export function loadNativeTimeline(
         afterTimestamp: options?.afterTimestamp,
         userName,
         charName,
-        memoryTarget: options?.memoryTarget,
     });
     for (const storyEntry of storyEntries) {
         entries.push({
             id: storyEntry.id,
-            sessionId: storyEntry.sessionId,
             sourceApp: "story",
             sourceDetail: "story",
             timestamp: storyEntry.timestamp,
@@ -882,15 +841,9 @@ export function loadNativeTimeline(
     });
     for (const customEntry of customAppEntries) {
         const label = customEntry.appLabel || customEntry.appName || "APP";
-        const specialSource = customEntry.appId === "life" ? "life"
-            : customEntry.appId === "photo_wall" ? "photo_wall"
-            : customEntry.appId === "phone_widget" ? "phone_widget"
-            : customEntry.appId === "watch" ? "watch"
-            : customEntry.appId === "global_watch" ? "global_watch"
-            : "custom_app";
         entries.push({
             id: customEntry.id,
-            sourceApp: specialSource,
+            sourceApp: "custom_app",
             sourceDetail: "custom_app_event",
             authorType: "user",
             timestamp: customEntry.createdAt,
@@ -904,101 +857,6 @@ export function loadNativeTimeline(
                 timestampOptions,
             }),
         });
-    }
-
-    // ── Completed Photo Wall co-creation records: one event per saved creation session. ──
-    const photoWall = loadPhotoWallState();
-    const photoById = new Map(photoWall.photos.map(photo => [photo.id, photo]));
-    for (const record of photoWall.creationRecords ?? []) {
-        if (options?.afterTimestamp && record.createdAt <= options.afterTimestamp) continue;
-        const linkedPhotos = record.photoIds.map(photoId => photoById.get(photoId)).filter(Boolean);
-        // Public wall semantics: every saved creation is visible to every character.
-        // Do not gate shared-wall history on photo-level share flags or author identity.
-        const photoNames = linkedPhotos.map(photo => photo?.title).filter(Boolean).slice(0, 4);
-        const summary = [record.authorName + "完成了一次照片墙共同创作", record.narrative, photoNames.length ? "关联照片：" + photoNames.join("、") : ""].filter(Boolean).join("；");
-        entries.push({
-            id: "photo_wall_creation:" + record.id,
-            sourceApp: "photo_wall",
-            sourceDetail: "photo_wall_creation",
-            authorType: record.authorType,
-            timestamp: record.createdAt,
-            customAppId: "photo_wall",
-            customAppName: "照片墙",
-            customAppLabel: "共同创作",
-            content: formatStoredPromptEventContent(renderUserNameMacro(summary, userName), {
-                label: "照片墙共同创作", timestamp: record.createdAt, timeAware, timestampOptions,
-            }),
-        });
-    }
-
-    // ── Shared Life timeline (scene actions, whereabouts, schedules and tools) ──
-    // Native chat, moments and diary content already has dedicated projections above.
-    // Only add Life-specific events here to avoid duplicate memory injection.
-    const lifeState = loadVirtualLifeState();
-    // Historical shared experiences remain visible even if the user temporarily disables
-    // the Life engine; disabling the engine pauses new simulation, not stored memories.
-    for (const fact of lifeState.memories ?? []) {
-        if (!fact.participants.includes(characterId)) continue;
-        if (options?.afterTimestamp && fact.occurredAt <= options.afterTimestamp) continue;
-        entries.push({
-            id: "life_shared_event:" + fact.id,
-            sourceApp: "life",
-            sourceDetail: "life_shared_event",
-            authorType: "user",
-            timestamp: fact.occurredAt,
-            customAppId: "life",
-            customAppName: "生活",
-            customAppLabel: "共同经历",
-            content: formatStoredPromptEventContent(renderUserNameMacro(fact.fact, userName), {
-                label: "共同经历", timestamp: fact.occurredAt, timeAware, timestampOptions,
-            }),
-        });
-    }
-    if (lifeState.settings.enabled) {
-        const characterSceneIds = new Set(
-            lifeState.scenes
-                .filter(scene => scene.participants.some(participant =>
-                    participant.ownerType === "character" && participant.ownerId === characterId
-                ))
-                .map(scene => scene.id)
-        );
-        const characterInvitationIds = new Set(
-            lifeState.invitations
-                .filter(invitation => invitation.characterId === characterId)
-                .map(invitation => invitation.id)
-        );
-        for (const lifeEntry of lifeState.timeline ?? []) {
-            if (options?.afterTimestamp && (lifeEntry.recordedAt ?? lifeEntry.occurredAt) <= options.afterTimestamp) continue;
-            if (!["location", "scene", "action", "dialogue", "schedule", "tool", "system"].includes(lifeEntry.category)) continue;
-            const belongsToCharacter = lifeEntry.actorId === characterId
-                || (!!lifeEntry.sceneId && characterSceneIds.has(lifeEntry.sceneId))
-                || (!!lifeEntry.sourceId && characterInvitationIds.has(lifeEntry.sourceId));
-            if (!belongsToCharacter) continue;
-            // 玩家自己的生活记录在角色记忆里用 {{user}} 做主语，避免第一人称“我”被当成角色自己的经历。
-            const subject = asPlayerRecordSubject(lifeEntry, lifeState.settings.playerDisplayName);
-            const title = clipTimelineText(subject.title, 180);
-            const details = clipTimelineText(lifeEntry.details ?? "", 500);
-            const label = lifeEntry.category === "dialogue" ? "共同场景对话"
-                : lifeEntry.category === "action" ? "共同场景行动"
-                : lifeEntry.category === "tool" ? "角色工具调用"
-                : lifeEntry.category === "schedule" ? "日程变化"
-                : lifeEntry.category === "location" ? "地点变化"
-                : "生活记录";
-            entries.push({
-                id: "life:" + lifeEntry.id,
-                sourceApp: "life",
-                sourceDetail: "custom_app_event",
-                authorType: lifeEntry.actorId === characterId ? "character" : "user",
-                timestamp: lifeEntry.occurredAt,
-                customAppId: "life",
-                customAppName: "生活",
-                customAppLabel: label,
-                content: formatStoredPromptEventContent(
-                    renderUserNameMacro([title, details].filter(Boolean).join("："), userName),
-                    { label: "生活", timestamp: lifeEntry.occurredAt, timeAware, timestampOptions },
-                ),
-            });
-        }
     }
 
     // Sort by timestamp ascending
@@ -1016,10 +874,6 @@ function compareTimelineTimestamps(a: string, b: string): number {
 
 // Fixed order — lower = further from LLM output (appears higher in prompt)
 const FEATURE_ORDER: Record<string, number> = { map: 0, game: 0.5, moments: 1, xiaohongshu: 1.5, checkphone: 1.7, story: 2, vn: 2, theater: 2.2, interview: 2.35, cocreate: 2.4, diary_entry: 2.45, calendar_day: 2.47, notewall: 2.5, custom_app: 2.6, group_chat: 3, chat: 4 };
-// First-class app timelines share the custom-app prompt block and ordering.
-const CUSTOM_APP_TIMELINE_SOURCES = new Set<string>([
-    "custom_app", "photo_wall", "watch", "phone_widget", "life",
-]);
 // Map appId → XML tag name for the "current feature" wrapper
 const FEATURE_TAG: Record<string, string> = {
     chat: "recent_chat",
@@ -1037,7 +891,7 @@ const FEATURE_TAG: Record<string, string> = {
 };
 
 function getFeatureTag(appId: string): string {
-    return CUSTOM_APP_TIMELINE_SOURCES.has(appId) || appId.startsWith("custom_app:") ? "recent_custom_app" : FEATURE_TAG[appId] ?? FEATURE_TAG.chat;
+    return appId === "custom_app" || appId.startsWith("custom_app:") ? "recent_custom_app" : FEATURE_TAG[appId] ?? FEATURE_TAG.chat;
 }
 
 function isChatOfflineEntry(entry: NativeTimelineEntry): boolean {
@@ -1145,14 +999,7 @@ export function filterTimelineByAllowedSources(
  * For history-style appIds, the current feature's block has empty content because
  * the actual content is the history turns (wrapped by the assembler).
  */
-/** 按当前消费 APP 限制总注入条数；原始来源数据始终保留在各自存储中。 */
-function limitTimelineForApp<T>(entries: T[], appId: string, limits?: Record<string, unknown>): T[] {
-    const raw = limits?.[appId];
-    const limit = typeof raw === "number" && Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 0;
-    return limit ? entries.slice(-limit) : entries;
-}
-
-export function prepareShortTermContext(
+function prepareShortTermContextImpl(
     characterId: string,
     appId: string,
     options?: {
@@ -1164,11 +1011,6 @@ export function prepareShortTermContext(
         includeDirectChatEntries?: boolean;
         /** 只读取该时间之后的跨应用最近事件；剧情分线用它隔离创建前的短期记忆。 */
         afterTimestamp?: string;
-        /** false 时仅保留剧情 APP 时间线，不读取其他 APP 的相关事件。 */
-        includeOtherApps?: boolean;
-        /** false 时排除其他剧情分线写入公共时间线的事件（只影响 story）。 */
-        includeStoryPublic?: boolean;
-        memoryTarget?: "short_term" | "long_term" | "core";
         timeAware?: boolean;
         promptTimestampOptions?: PromptTimestampOptions;
     },
@@ -1178,44 +1020,28 @@ export function prepareShortTermContext(
     wbActivationContext: string;
     unifiedRecentItems: UnifiedRecentItem[];
 } {
-    const prepareStartedAt = typeof performance !== "undefined" ? performance.now() : Date.now();
     const timeAware = resolvePromptTimeAware(options?.timeAware);
     const memConfig = loadMemoryConfig();
+    const promptHistory = options?.history ?? [];
+    const cutoff = historyBudgetCutoff(promptHistory, memConfig.shortTermTokenBudget, options?.includeNativeToolHistory);
     let timeline = loadNativeTimeline(characterId, {
+        promptCutoffTimestamp: cutoff,
+        directPreviewOnly: appId === "chat" && !options?.includeDirectChatEntries,
         userName: options?.userName,
         appId: appId as import("./settings-types").ContentAppId,
         excludeOfflineSessionId: options?.excludeOfflineSessionId,
         afterTimestamp: options?.afterTimestamp,
-        memoryTarget: options?.memoryTarget,
-        scanTokenBudget: memConfig.shortTermTokenBudget,
         timeAware,
         promptTimestampOptions: options?.promptTimestampOptions,
     });
 
-    if (options?.includeOtherApps === false) {
-        timeline = timeline.filter((entry) => entry.sourceApp === "story");
-    }
-    if (options?.includeStoryPublic === false) {
-        timeline = timeline.filter((entry) => entry.sourceApp !== "story");
-    }
     timeline = filterTimelineByAllowedSources(timeline, memConfig.shortTermAllowedSources);
-    timeline = limitTimelineForApp(timeline, appId, memConfig.shortTermAppLimits as Record<string, unknown> | undefined);
 
     // Activation context: full timeline for keyword matching (not truncated)
     const wbActivationContext = timeline.slice(-10).map(e => e.content).join("\n");
     const budget = memConfig.shortTermTokenBudget;
     const currentTag = getFeatureTag(appId);
     const history = options?.history ?? [];
-    // 只保留最近约 budget token 的历史：更早的轮次最终会被截掉，先裁掉可以
-    // 避免对全量历史做格式化/分词（用户把预算降到几千仍然卡，就是因为这里
-    // 之前始终扫描完整 history）。
-    const historyForPool = trimHistoryToTailTokenBudget(history, budget, options?.includeNativeToolHistory);
-    const historyPoolOffset = history.length - historyForPool.length;
-    // Offline/life callers often pass the online chat as `history`; keep those
-    // messages once (in history) instead of injecting the same rows again as
-    // `recent_chat`. This preserves the online-chat memory while avoiding the
-    // duplicate block that used to over-weight old topics.
-    const historyMessageIds = new Set(historyForPool.map(message => message.id));
     const characterName = loadCharacters().find(c => c.id === characterId)?.name ?? "角色";
     const wrapsCurrentHistory = appId === "chat" || appId === "group_chat" || appId === "story" || appId === "vn" || appId === "adventure";
     const skipDirectChatEntries = appId === "chat" && !options?.includeDirectChatEntries;
@@ -1300,7 +1126,7 @@ export function prepareShortTermContext(
         raw.push({ tag: "recent_cocreate", order: FEATURE_ORDER.cocreate, entries: cocreateEntries });
     }
 
-    const customAppEntries = timeline.filter(e => CUSTOM_APP_TIMELINE_SOURCES.has(e.sourceApp));
+    const customAppEntries = timeline.filter(e => e.sourceApp === "custom_app");
     if (customAppEntries.length > 0) {
         raw.push({ tag: "recent_custom_app", order: FEATURE_ORDER.custom_app, entries: customAppEntries });
     }
@@ -1315,13 +1141,8 @@ export function prepareShortTermContext(
     }
 
     // Direct chat from timeline — skipped only when the current history already comes from chat/group_chat.
-    // Also skip rows already present in `history` (offline/life callers pass online chat as history).
     if (!skipDirectChatEntries) {
-        const chatEntries = timeline.filter(e =>
-            e.sourceApp === "chat"
-            && e.sourceDetail === "direct"
-            && !historyMessageIds.has(e.id),
-        );
+        const chatEntries = timeline.filter(e => e.sourceApp === "chat" && e.sourceDetail === "direct");
         if (chatEntries.length > 0) {
             raw.push({ tag: "recent_chat", order: FEATURE_ORDER.chat, entries: chatEntries });
         }
@@ -1337,7 +1158,7 @@ export function prepareShortTermContext(
         raw.push({ tag: "recent_chat", order: FEATURE_ORDER.chat, entries: offlineDirectChatEntries });
     }
 
-    const coReadingEntries = buildCoReadingBoundaryEntries(historyForPool, {
+    const coReadingEntries = buildCoReadingBoundaryEntries(history, {
         characterName,
         userName: options?.userName ?? "用户",
         timeAware,
@@ -1368,10 +1189,10 @@ export function prepareShortTermContext(
             pool.push({ kind: "entry", timestamp: e.timestamp, tokens: estimateTokens(e.content) + 4, entryId: e.id, sourceTag: r.tag });
         }
     }
-    for (let i = 0; i < historyForPool.length; i++) {
-        const message = historyForPool[i];
-        if (isPromptHiddenChatMessage(message, { includeNativeToolHistory: options?.includeNativeToolHistory })) continue;
-        pool.push({ kind: "history", timestamp: message.createdAt, tokens: estimateTokens(message.content) + 4, msgIdx: historyPoolOffset + i });
+    for (let i = 0; i < history.length; i++) {
+        if (cutoff && compareTimelineTimestamps(history[i].createdAt, cutoff) < 0) continue;
+        if (isPromptHiddenChatMessage(history[i], { includeNativeToolHistory: options?.includeNativeToolHistory })) continue;
+        pool.push({ kind: "history", timestamp: history[i].createdAt, tokens: estimateTokens(history[i].content) + 4, msgIdx: i });
     }
 
     pool.sort((a, b) => compareTimelineTimestamps(a.timestamp, b.timestamp));
@@ -1396,8 +1217,8 @@ export function prepareShortTermContext(
     }
 
     // Build truncated history (preserve original order)
-    const truncatedHistoryWithOrigIdx = historyForPool
-        .map((msg, idx) => ({ msg, idx: historyPoolOffset + idx }))
+    const truncatedHistoryWithOrigIdx = history
+        .map((msg, idx) => ({ msg, idx }))
         .filter(item => survivingMsgIndices.has(item.idx));
     const truncatedHistory = truncatedHistoryWithOrigIdx.map(item => item.msg);
     const historyIndexMap = new Map<number, number>();
@@ -1443,15 +1264,6 @@ export function prepareShortTermContext(
         });
     }
 
-    recordPerformanceMetric("prompt.short_term.prepare", (typeof performance !== "undefined" ? performance.now() : Date.now()) - prepareStartedAt, {
-        appId,
-        budget,
-        historyTotal: history.length,
-        historyScanned: historyForPool.length,
-        timelineEntries: timeline.length,
-        poolSize: pool.length,
-        keptMessages: truncatedHistory.length,
-    });
     return { recentBlocks, truncatedHistory, wbActivationContext, unifiedRecentItems };
 }
 
@@ -1486,12 +1298,10 @@ export function prepareGroupShortTermContext(
             userName: options?.userName,
             appId: "group_chat",
             excludeOfflineSessionId: options?.excludeOfflineSessionId,
-            scanTokenBudget: memConfig.shortTermTokenBudget,
             timeAware,
             promptTimestampOptions: options?.promptTimestampOptions,
         });
         timeline = filterTimelineByAllowedSources(timeline, allowed);
-        timeline = limitTimelineForApp(timeline, "group_chat", memConfig.shortTermAppLimits as Record<string, unknown> | undefined);
         for (const entry of timeline) {
             if (entry.sourceApp === "chat" && entry.sourceDetail === "group" && entry.groupSessionId === options?.excludeGroupSessionId) {
                 continue;
@@ -1580,7 +1390,7 @@ export function prepareGroupShortTermContext(
         raw.push({ tag: "recent_cocreate", order: FEATURE_ORDER.cocreate, entries: cocreateEntries });
     }
 
-    const customAppEntries = timeline.filter(e => CUSTOM_APP_TIMELINE_SOURCES.has(e.sourceApp));
+    const customAppEntries = timeline.filter(e => e.sourceApp === "custom_app");
     if (customAppEntries.length > 0) {
         raw.push({ tag: "recent_custom_app", order: FEATURE_ORDER.custom_app, entries: customAppEntries });
     }
@@ -1623,16 +1433,13 @@ export function prepareGroupShortTermContext(
             });
         }
     }
-    const historyForPool = trimHistoryToTailTokenBudget(history, memConfig.shortTermTokenBudget, options?.includeNativeToolHistory);
-    const historyPoolOffset = history.length - historyForPool.length;
-    for (let i = 0; i < historyForPool.length; i++) {
-        const message = historyForPool[i];
-        if (isPromptHiddenChatMessage(message, { includeNativeToolHistory: options?.includeNativeToolHistory })) continue;
+    for (let i = 0; i < history.length; i++) {
+        if (isPromptHiddenChatMessage(history[i], { includeNativeToolHistory: options?.includeNativeToolHistory })) continue;
         pool.push({
             kind: "history",
-            timestamp: message.createdAt,
-            tokens: estimateTokens(message.content) + 4,
-            msgIdx: historyPoolOffset + i,
+            timestamp: history[i].createdAt,
+            tokens: estimateTokens(history[i].content) + 4,
+            msgIdx: i,
         });
     }
 
@@ -1654,8 +1461,8 @@ export function prepareGroupShortTermContext(
             survivingMsgIndices.add(item.msgIdx);
         }
     }
-    const truncatedHistoryWithOrigIdx = historyForPool
-        .map((msg, idx) => ({ msg, idx: historyPoolOffset + idx }))
+    const truncatedHistoryWithOrigIdx = history
+        .map((msg, idx) => ({ msg, idx }))
         .filter((item) => survivingMsgIndices.has(item.idx));
     const truncatedHistory = truncatedHistoryWithOrigIdx.map(item => item.msg);
     const historyIndexMap = new Map<number, number>();
@@ -1681,7 +1488,7 @@ export function prepareGroupShortTermContext(
                                     entry.sourceApp === "checkphone" ? "recent_checkphone" :
                                         entry.sourceApp === "interview_magazine" ? "recent_interview" :
                                                 entry.sourceApp === "cocreate" ? "recent_cocreate" :
-                                                    CUSTOM_APP_TIMELINE_SOURCES.has(entry.sourceApp) ? "recent_custom_app" :
+                                                    entry.sourceApp === "custom_app" ? "recent_custom_app" :
                                                         entry.sourceApp === "story" && entry.sourceDetail === "black_market_theater" ? "recent_theater" :
                                                             entry.sourceApp === "diary" && entry.sourceDetail === "diary_entry" ? "recent_diary" :
                                                                 entry.sourceApp === "diary" && entry.sourceDetail === "notewall" ? "recent_notewall" :
@@ -1729,3 +1536,5 @@ export function formatTimelineForSummarization(
         count: entries.length,
     };
 }
+
+export function prepareShortTermContext(...args: Parameters<typeof prepareShortTermContextImpl>): ReturnType<typeof prepareShortTermContextImpl> { return measureSync("prompt.short_term", () => prepareShortTermContextImpl(...args)); }

@@ -758,6 +758,13 @@ export function PhoneCalendarApp({
             tagConfig={tagConfig}
             holidayMap={holidayMarks}
             weekStats={weekStats}
+            generationControls={<CalendarGeneratePage mode="review" selectedDate={selectedDate}
+              ownerName={selectedOwner?.name ?? "我"} ownerType={selectedOwner?.ownerType ?? "user"}
+              ownerId={selectedOwner?.ownerId ?? "self"} isCharacter={selectedOwner?.ownerType === "character"}
+              ownerStrip={null} activeTab="review" onTabChange={handleTabChange} onBack={() => setView("month")}
+              onApplyWeekly={handleApplyWeeklyPreview} onApplyDayReview={handleApplyDayReview}
+              onApplyDayReviewForDate={handleApplyDayReviewForDate} onOpenReview={() => setView("review")} onNotice={onNotice} />}
+
             ownerStrip={ownerStrip}
             activeTab={activeTab}
             onTabChange={handleTabChange}

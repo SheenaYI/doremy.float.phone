@@ -17,7 +17,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true, balance: data.data?.balance });
     }
     return NextResponse.json({ ok: false, error: data.message || "验证失败" });
-  } catch (error: unknown) {
-    return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : String(error) });
+  } catch (e: any) {
+    return NextResponse.json({ ok: false, error: e.message });
   }
 }

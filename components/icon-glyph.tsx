@@ -1,5 +1,6 @@
 import type { IconId } from "@/lib/desktop-config";
 import {
+  mdiArchiveOutline, mdiChartBar, mdiTelevisionPlay,
   mdiCompass,
   mdiCubeOutline,
   mdiDice5,
@@ -40,7 +41,6 @@ import {
   mdiHammerWrench,
   mdiGlassCocktail,
   mdiStorefrontOutline,
-  mdiPhone,
 } from "@mdi/js";
 
 type IconGlyphProps = {
@@ -49,12 +49,8 @@ type IconGlyphProps = {
 };
 
 const MDI_PATHS: Record<IconId, string> = {
+  archive: mdiArchiveOutline, watchtogether: mdiTelevisionPlay, callstats: mdiChartBar,
   settings: mdiCogOutline,
-  life: mdiHeart,
-  archive: mdiDatabase,
-  photowall: mdiCamera,
-  watchtogether: mdiMovie,
-  callstats: mdiPhone,
   chat: mdiMessageProcessing,
   diary: mdiBookOpenPageVariant,
   music: mdiMusic,
