@@ -1,0 +1,103 @@
+.vna-studio[data-map-mode] .vna-assets-body { background: var(--c-page-body-bg); }
+/* Resource management follows the phone UI; in-story settings use VN theme tokens. */
+.vn-map-resources, .vn-resource-dialog:not(.vn-resource-preview-dialog) {
+  color: var(--c-text-title);
+  font-size: calc(12px * var(--app-text-scale, 1));
+  line-height: 1.6;
+  --vn-ui-panel: var(--c-panel);
+  --vn-ui-input: var(--c-input);
+  --vn-box-border: var(--c-panel-border);
+}
+.vn-map-resources { display: flex; flex-direction: column; gap: 24px; min-width: 0; }
+.vn-resource-caption { margin: 0; color: color-mix(in srgb, var(--c-text-title) 75%, var(--c-panel)); font-size: 11px; line-height: 1.7; }
+.vn-map-level > header, .vn-map-preview-section > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 5px; }
+.vn-map-level h3, .vn-map-preview-section h3 { margin: 0; font-size: 13px; font-weight: 650; }
+.vn-map-level > header > span { color: var(--c-text); font-size: 10px; }
+.vn-map-resource-list { margin-top: 12px; display: grid; gap: 10px; }
+.vn-map-resource-row { display: flex; width: 100%; min-width: 0; align-items: center; gap: 12px; padding: 10px; border: 1px solid var(--c-card-border); border-radius: 14px; background: var(--c-card); color: inherit; text-align: left; cursor: pointer; }
+.vn-map-thumbnail { width: 58px; height: 66px; flex-shrink: 0; display: grid; place-items: center; border-radius: 8px; overflow: hidden; background: var(--c-input); color: var(--c-icon); }
+.vn-map-thumbnail img { width: 100%; height: 100%; object-fit: cover; }
+.vn-map-resource-copy { display: flex; flex-direction: column; flex: 1; gap: 5px; min-width: 0; }
+.vn-map-resource-copy strong { font-size: 12px; overflow-wrap: anywhere; }
+.vn-map-resource-copy > span { color: var(--c-text); font-size: 10px; overflow-wrap: anywhere; }
+.vn-map-resource-empty { padding: 24px 14px; display: flex; align-items: center; gap: 12px; color: var(--c-text); background: var(--c-input); border-radius: 12px; font-size: 11px; }
+.vn-map-preview-section { border-top: 1px solid var(--c-panel-border); padding-top: 20px; }
+.vn-map-preview-section > header button { display: flex; align-items: center; gap: 5px; border: 0; padding: 8px 0; color: inherit; background: transparent; font: inherit; font-size: 11px; }
+.vn-map-preview { position: relative; margin-top: 12px; height: 420px; border-radius: 16px; overflow: hidden; }
+.vn-map-preview .vn-map-full { padding: 0; }
+.vn-map-preview-result { display: flex; align-items: center; gap: 6px; font-size: 11px; }
+.vn-map-preview-result > span { color: var(--c-text); }
+.vn-resource-overlay { position: fixed; inset: 0; z-index: 1000; display: flex; align-items: center; justify-content: center; padding: max(12px, env(safe-area-inset-top)) 12px max(12px, env(safe-area-inset-bottom)); background: var(--c-overlay); }
+.vn-resource-dialog { display: flex; flex-direction: column; width: min(100%, 540px); max-height: 100%; min-height: 0; border-radius: 20px; background: var(--c-panel); overflow: hidden; box-shadow: 0 18px 56px rgba(20, 28, 38, .2); }
+.vn-resource-dialog-body { min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.vn-resource-dialog footer { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 16px; border-top: 1px solid var(--c-panel-border); }
+.vn-resource-dialog footer > span { color: var(--c-text); font-size: 10px; }
+.vn-resource-dialog footer button { border: 0; border-radius: 10px; padding: 10px 16px; font: inherit; font-size: 12px; }
+.vn-resource-dialog .vn-editor-primary { background: var(--c-text-title); color: var(--c-panel); }
+.vn-resource-dialog .vn-map-editor { min-height: 0; border-radius: 0; overflow: visible; background: transparent; color: var(--c-text-title); display: block; }
+.vn-resource-dialog .vn-map-header { position: sticky; top: 0; z-index: 4; background: var(--c-panel); padding: 12px 16px; border-bottom: 1px solid var(--c-panel-border); }
+.vn-resource-dialog .vn-map-header strong { font-size: 14px; }
+.vn-resource-dialog .vn-map-header button { width: 36px; padding: 6px; border: 0; background: transparent; }
+.vn-resource-dialog .vn-map-tools { padding: 10px 16px; gap: 10px; }
+.vn-resource-dialog .vn-map-tools:has(label) { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.vn-resource-dialog .vn-map-tools > button:has(svg.lucide-trash-2) { grid-column: 1 / -1; justify-self: start; color: var(--c-danger); border: 0; background: transparent; padding: 0; min-height: 30px; }
+.vn-resource-dialog .vn-map label { min-width: 0; font-size: 11px; gap: 6px; }
+.vn-resource-dialog .vn-map input, .vn-resource-dialog .vn-map select { color: var(--c-text-title); background: var(--c-input); border: 1px solid var(--c-panel-border); border-radius: 9px; font-size: 12px; padding: 9px; }
+.vn-resource-dialog .vn-map button { font-size: 12px; }
+.vn-resource-dialog .vn-map-viewport { margin: 4px 16px; padding: 12px; min-height: 0; overflow: visible; background: var(--c-input); border-radius: 12px; }
+.vn-resource-dialog .vn-map-canvas { margin: auto; min-height: 0; }
+.vn-resource-dialog .vn-map-canvas > img { border-radius: 6px; }
+.vn-resource-dialog .vn-map-pin span { font-size: 10px; padding: 3px 5px; }
+.vn-map-edit-hint { margin: 8px 16px; color: var(--c-text); font-size: 10px; line-height: 1.6; }
+.vn-resource-dialog .vn-map-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 12px 16px 18px; gap: 12px; }
+.vn-resource-dialog .vn-map-fields > label:first-child { grid-column: 1 / -1; }
+.vn-resource-dialog .vn-map-fields > button { grid-column: 1 / -1; justify-self: start; color: var(--c-danger); background: transparent; border: 0; }
+.vn-resource-preview-dialog { position: relative; height: min(88dvh, 780px); }
+.vn-resource-preview-dialog .vn-map-full { padding: 0; }
+
+.vn-preferences-overlay { position: absolute; inset: 0; z-index: 80; display: flex; align-items: flex-end; justify-content: center; padding: 12px; background: var(--vn-ui-overlay); }
+.vn-preferences { display: flex; flex-direction: column; width: min(100%, 520px); max-height: calc(100% - var(--page-header-safe-top, 48px)); min-height: 0; border: 1px solid var(--vn-ui-border); border-radius: 20px; overflow: hidden; background: var(--vn-ui-panel); color: var(--vn-ui-text-bright); font-size: 12px; box-shadow: 0 16px 48px rgba(0, 0, 0, .18); }
+.vn-preferences > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 18px 18px 14px; border-bottom: 1px solid var(--vn-ui-border); }
+.vn-preferences h2 { margin: 0; font-size: 15px; font-weight: 600; }
+.vn-preferences p { margin: 6px 0 0; color: var(--vn-ui-text); font-size: 11px; line-height: 1.7; }
+.vn-preferences button { color: inherit; background: var(--vn-ui-input); border: 1px solid var(--vn-ui-input-border); border-radius: 10px; min-height: 40px; padding: 8px 12px; font: inherit; cursor: pointer; }
+.vn-preferences > header button { flex-shrink: 0; width: 40px; display: grid; place-items: center; border: 0; background: transparent; }
+.vn-preferences-scroll { overflow: auto; min-height: 0; padding: 0 18px; overscroll-behavior: contain; }
+.vn-preferences-group { padding: 18px 0; display: flex; flex-direction: column; gap: 12px; }
+.vn-preferences-group + .vn-preferences-group { border-top: 1px solid var(--vn-ui-border); }
+.vn-preferences h3 { margin: 0; color: var(--vn-ui-accent); font-size: 12px; font-weight: 600; }
+.vn-preferences label { display: flex; flex-direction: column; min-width: 0; gap: 7px; color: var(--vn-ui-text); font-size: 11px; }
+.vn-preferences input, .vn-preferences textarea { width: 100%; min-width: 0; border: 1px solid var(--vn-ui-input-border); border-radius: 10px; background: var(--vn-ui-input); color: var(--vn-ui-input-text); padding: 10px 12px; font: inherit; font-size: 12px; line-height: 1.65; }
+.vn-preferences input::placeholder, .vn-preferences textarea::placeholder { color: var(--vn-ui-text); opacity: .75; }
+.vn-preferences .vn-tool-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.vn-preferences .vn-preferences-link { display: flex; align-items: center; gap: 10px; text-align: left; border: 0; padding: 0; background: transparent; }
+.vn-preferences-link > span { flex: 1; }
+.vn-preferences-link small { display: block; color: var(--vn-ui-text); font-size: 10px; margin-top: 4px; }
+.vn-preferences > footer { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; flex-shrink: 0; border-top: 1px solid var(--vn-ui-border); padding: 12px 18px max(12px, env(safe-area-inset-bottom)); }
+.vn-preferences button.vn-preferences-save { background: var(--vn-ui-accent-bg); border-color: var(--vn-ui-accent-dim); color: var(--vn-ui-accent); }
+.vn-preferences [role=alert] { color: var(--vn-ui-danger); margin-bottom: 12px; }
+.vn-preferences :is(input, textarea, button):focus-visible { outline: 2px solid var(--vn-ui-accent); outline-offset: 2px; }
+.vn-map-resources button:focus-visible, .vn-resource-dialog :is(button, input, select):focus-visible { outline: 2px solid var(--c-icon-active); outline-offset: 2px; }
+
+/* The status editor shares all six VN palettes, including the light themes. */
+.vn-status-settings-backdrop { z-index: 90; background: var(--vn-ui-overlay); }
+.vn-status-settings { min-height: 0; background: var(--vn-ui-panel); color: var(--vn-ui-text-bright); border-color: var(--vn-ui-border); gap: 14px; }
+.vn-status-settings > header h2 { font-family: inherit; font-size: 15px; margin: 0; }
+.vn-status-settings > header span { display: none; }
+.vn-status-settings > header button { color: var(--vn-ui-text); min-width: 36px; min-height: 36px; }
+.vn-status-settings-modes { background: var(--vn-ui-input); flex-shrink: 0; }
+.vn-status-settings-modes button { color: var(--vn-ui-text); min-height: 36px; font-size: 11px; }
+.vn-status-settings-modes button[data-active=true] { background: var(--vn-ui-accent-bg); color: var(--vn-ui-accent); }
+.vn-status-settings-scroll { min-height: 0; overscroll-behavior: contain; gap: 14px; }
+.vn-status-field > span, .vn-status-preview-head { color: var(--vn-ui-text); font-size: 11px; }
+.vn-status-field > span em { color: var(--vn-ui-text); font-size: 10px; }
+.vn-status-field textarea { background: var(--vn-ui-input); color: var(--vn-ui-input-text); border-color: var(--vn-ui-input-border); font-size: 11px; }
+.vn-status-settings :is(.vn-status-bar-row > span, .vn-status-bar-row > em, .vn-status-inner, .vn-status-empty) { color: var(--vn-ui-text); }
+.vn-status-settings .vn-status-chips > span { background: var(--vn-ui-input); color: var(--vn-ui-text); border-color: var(--vn-ui-border); }
+.vn-status-preview { background: var(--vn-ui-input); border-color: var(--vn-ui-border); }
+.vn-status-preview-head button { color: var(--vn-ui-accent); font-size: 11px; }
+.vn-status-settings > footer { flex-shrink: 0; }
+.vn-status-settings > footer button { background: var(--vn-ui-input); color: var(--vn-ui-text); border-color: var(--vn-ui-input-border); min-height: 36px; }
+.vn-status-settings > footer button.is-primary { background: var(--vn-ui-accent-bg); color: var(--vn-ui-accent); border-color: var(--vn-ui-accent-dim); }
+
+.vn-preferences > footer [role=alert] { flex-basis: 100%; margin: 0; }

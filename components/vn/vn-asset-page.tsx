@@ -19,7 +19,7 @@ import {
 } from "@/lib/vn-asset-storage";
 import { getThemeAssetDataUrl, saveThemeAssetFromBlob } from "@/lib/theme-storage";
 import { removeConnectedEdgeBackgroundFromDataUrl } from "@/lib/image-background-removal";
-import { VnMapView } from "./vn-map";
+import { VnMapResources } from "./vn-map-resources";
 import { ConfirmDialog } from "@/components/ui/modal";
 
 type Tab = "scenes" | "sprites" | "maps";
@@ -40,6 +40,7 @@ export function VnAssetPage({ onNotice }: VnAssetPageProps) {
   const [editingLayoutAsset, setEditingLayoutAsset] = useState<{ id: string; type: "scene" | "sprite"; name: string; layout: VnAssetLayout } | null>(null);
   const [removingBackgroundAssetId, setRemovingBackgroundAssetId] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const mapFileRef = useRef<HTMLInputElement>(null);
   const nameInputRef = useRef<HTMLInputElement>(null);
 
   const characters = loadCharacters();
@@ -165,7 +166,7 @@ export function VnAssetPage({ onNotice }: VnAssetPageProps) {
   return (
     <div className="vna-page">
       <style>{`
-        .vna-studio[data-map-mode] .vna-assets-heading, .vna-studio[data-map-mode] .vna-add-btn, .vna-studio[data-map-mode] .vna-grid, .vna-studio[data-map-mode] .vna-empty { display:none; }
+        .vna-studio[data-map-mode] .vna-assets-heading, .vna-studio[data-map-mode] .vna-grid, .vna-studio[data-map-mode] .vna-empty { display:none; }
         .vna-page {
           padding: 16px 20px 32px;
           display: flex;
@@ -631,6 +632,7 @@ export function VnAssetPage({ onNotice }: VnAssetPageProps) {
               type="button"
               className="vna-add-btn"
               onClick={() => {
+                if (tab === "maps") { mapFileRef.current?.click(); return; }
                 if (tab === "sprites" && !selectedCharId) {
                   onNotice?.("请先选择角色");
                   return;
@@ -639,7 +641,7 @@ export function VnAssetPage({ onNotice }: VnAssetPageProps) {
               }}
             >
               <ImagePlus size={15} strokeWidth={1.85} />
-              {tab === "scenes" ? "添加场景" : "添加立绘"}
+              {tab === "maps" ? "新增地图" : tab === "scenes" ? "添加场景" : "添加立绘"}
             </button>
             <span className="vna-select-shell">
               <select
@@ -659,7 +661,7 @@ export function VnAssetPage({ onNotice }: VnAssetPageProps) {
         </div>
 
         <div className="vna-assets-body">
-          {tab === "maps" && <VnMapView key={selectedCharId} characterId={selectedCharId} editing/>}
+          {tab === "maps" && <VnMapResources key={selectedCharId} characterId={selectedCharId} fileRef={mapFileRef}/>}
           <div className="vna-assets-heading">
             <div>
               <h3 className="vna-assets-title">{tab === "scenes" ? "场景资源" : "立绘资源"}</h3>

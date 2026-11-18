@@ -1447,8 +1447,8 @@ export function VnPlayer({ characterId, chapterIndex, onClose, onChapterEnd, vnT
       {showScenePicker && <VnMapView characterId={characterId} onClose={() => setShowScenePicker(false)}
         onChoose={name => { handleSceneSwitch(name); setShowScenePicker(false); }} />}
       {roundReviewOpen && <VnRoundReview characterId={characterId} sessionId={session.id} chapterIndex={chapterIndex} onClose={() => setRoundReviewOpen(false)} onAdopt={() => { rebuildFrames(); const latest = [...loadVnMessagesForChapter(session.id, chapterIndex)].reverse().find(m => m.role === "assistant"); const parsed = latest ? parseVnResponse(latest.rawContent) : null; setCurrentOptions(parsed?.options ?? null); setWaitingForInput(true); }} />}
-      {settingsOpen && <VnGenerationSettings characterId={characterId} onClose={() => setSettingsOpen(false)}
-        onStatus={() => { setSettingsOpen(false); setStatusSettingsOpen(true); }} />}
+      {settingsOpen && <VnGenerationSettings inactive={statusSettingsOpen} characterId={characterId} onClose={() => setSettingsOpen(false)}
+        onStatus={() => setStatusSettingsOpen(true)} />}
 
       {/* ── Beats Panel ── */}
       {showBeatsPanel && (

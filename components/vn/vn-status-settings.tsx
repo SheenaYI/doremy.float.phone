@@ -32,11 +32,11 @@ export function VnStatusSettings({
 
   return (
     <div className="vn-status-settings-backdrop" onClick={event => { event.stopPropagation(); onClose(); }}>
-      <section className="vn-status-settings" onClick={event => event.stopPropagation()}>
+      <section className="vn-status-settings" role="dialog" aria-modal="true" aria-label="状态抽屉设置" onClick={event => event.stopPropagation()}>
         <header>
           <div>
             <span>VN STATUS</span>
-            <h2>状态浮窗</h2>
+            <h2>状态抽屉</h2>
           </div>
           <button type="button" onClick={onClose} aria-label="关闭状态设置"><X size={18} /></button>
         </header>
