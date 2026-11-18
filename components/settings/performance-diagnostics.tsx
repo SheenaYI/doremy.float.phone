@@ -38,7 +38,7 @@ function formatBytes(value: number | null): string {
 
 function MetricCard({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
-    <div style={{ border: "1px solid var(--border, rgba(128,128,128,.18))", borderRadius: 16, padding: 16, minWidth: 0 }}>
+    <div style={{ border: "1px solid var(--border, rgba(128,128,128,.18))", borderRadius: 16, padding: "14px 16px", minWidth: 0, minHeight: 118, display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
       <div style={{ fontSize: 11, opacity: .62 }}>{label}</div>
       <div style={{ fontSize: 19, fontWeight: 650, marginTop: 5, overflowWrap: "anywhere" }}>{value}</div>
       {hint ? <div style={{ fontSize: 10, opacity: .52, marginTop: 4 }}>{hint}</div> : null}
