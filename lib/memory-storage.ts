@@ -93,7 +93,24 @@ export async function saveMemoryEntry(entry: MemoryEntry): Promise<void> {
     }
 }
 
+// 同一次生成里长期记忆和核心记忆会并发调用 loadMemoryEntries；
+// 两次都打开 IndexedDB 全量读取，白白多花几百毫秒。共享 in-flight 请求，
+// 解析完即清理，不做跨轮缓存，避免读到旧数据。
+const _entriesInflight = new Map<string, Promise<MemoryEntry[]>>();
+
 export async function loadMemoryEntries(characterId: string): Promise<MemoryEntry[]> {
+    const pending = _entriesInflight.get(characterId);
+    if (pending) return pending;
+    const load = loadMemoryEntriesFromDb(characterId);
+    _entriesInflight.set(characterId, load);
+    void load.then(
+        () => { if (_entriesInflight.get(characterId) === load) _entriesInflight.delete(characterId); },
+        () => { if (_entriesInflight.get(characterId) === load) _entriesInflight.delete(characterId); },
+    );
+    return load;
+}
+
+async function loadMemoryEntriesFromDb(characterId: string): Promise<MemoryEntry[]> {
     const db = await openDb();
     if (!db) return [];
     try {
