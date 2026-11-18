@@ -2169,29 +2169,6 @@ export async function buildChatPromptMessages(
     }
 
     // ── 一次性事件提示（定时查岗的反应指导语）──
-    // Prompt 前缀缓存实验：时间字符串是默认预设里每轮都会变的少数字段。
-    // 把正文里的时间替换成稳定占位符，再把真实时间作为最后一条 system 注入；
-    // 这样人设/世界书/格式段在相邻回合可以保持相同前缀，命中中转的 prefix cache。
-    // 只对私聊开启；群聊/离线/VN 各有独立的上下文顺序，先不动。
-    if (resolvedAppId === "chat" && !isOfflineMode && promptTimeContext.timeContext.trim()) {
-        const timeMarker = "（当前时间见末尾）";
-        let replaced = 0;
-        for (const message of llmMessages) {
-            if (typeof message.content !== "string") continue;
-            if (!message.content.includes(promptTimeContext.timeContext)) continue;
-            message.content = message.content.split(promptTimeContext.timeContext).join(timeMarker);
-            replaced += 1;
-        }
-        if (replaced > 0) {
-            llmMessages.push({ role: "system", content: `【当前时间】${promptTimeContext.timeContext}` });
-            recordPerformanceMetric("prompt.chat.time_deferred", 0, {
-                appId: resolvedAppId,
-                replaced,
-                chars: promptTimeContext.timeContext.length,
-            });
-        }
-    }
-
     // 放在最后：它是「此刻该怎么回应」的即时要求，压过前面所有常驻设定。
     // 只存在于本次请求的 messages 数组里，没人把它写进聊天记录，所以不会
     // 在后续每一轮被重新读到、变成反复念叨。
