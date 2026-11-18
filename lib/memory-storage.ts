@@ -20,6 +20,7 @@ import {
 } from "./memory-room";
 import { kvGet, kvSet, kvRemove, registerKvMigration, registerDynamicPrefix } from "./kv-db";
 import { openIndexedDbAtLeast } from "./idb-open";
+import { recordPerformanceMetric } from "./performance-diagnostics";
 
 // ── Long-term memory DB (unchanged from v1) ──
 
@@ -79,6 +80,7 @@ function runRequest<T>(req: IDBRequest<T>): Promise<T> {
 // ── Long-term Entry CRUD ──
 
 export async function saveMemoryEntry(entry: MemoryEntry): Promise<void> {
+    invalidateMemoryEntriesCache();
     const db = await openDb();
     if (!db) return;
     try {
@@ -97,11 +99,31 @@ export async function saveMemoryEntry(entry: MemoryEntry): Promise<void> {
 // 两次都打开 IndexedDB 全量读取，白白多花几百毫秒。共享 in-flight 请求，
 // 解析完即清理，不做跨轮缓存，避免读到旧数据。
 const _entriesInflight = new Map<string, Promise<MemoryEntry[]>>();
+// IndexedDB 里的 MemoryEntry 带着 1536 维 embedding，全量 get 再反序列化在手机上
+// 单次数百毫秒；而每次生成都会读一遍。这里按角色做进程内缓存，写操作统一失效。
+let _entriesCacheVersion = 0;
+const _entriesCache = new Map<string, { version: number; entries: MemoryEntry[] }>();
+
+function invalidateMemoryEntriesCache(): void {
+    _entriesCacheVersion += 1;
+    _entriesCache.clear();
+}
 
 export async function loadMemoryEntries(characterId: string): Promise<MemoryEntry[]> {
+    const cached = _entriesCache.get(characterId);
+    if (cached && cached.version === _entriesCacheVersion) {
+        recordPerformanceMetric("prompt.memory.load_entries", 0, { cacheHit: true, entries: cached.entries.length });
+        return cached.entries;
+    }
     const pending = _entriesInflight.get(characterId);
     if (pending) return pending;
-    const load = loadMemoryEntriesFromDb(characterId);
+    const versionAtStart = _entriesCacheVersion;
+    const load = loadMemoryEntriesFromDb(characterId).then(entries => {
+        if (versionAtStart === _entriesCacheVersion) {
+            _entriesCache.set(characterId, { version: _entriesCacheVersion, entries });
+        }
+        return entries;
+    });
     _entriesInflight.set(characterId, load);
     void load.then(
         () => { if (_entriesInflight.get(characterId) === load) _entriesInflight.delete(characterId); },
@@ -114,6 +136,7 @@ async function loadMemoryEntriesFromDb(characterId: string): Promise<MemoryEntry
     const db = await openDb();
     if (!db) return [];
     try {
+        const loadStartedAt = typeof performance !== "undefined" ? performance.now() : Date.now();
         let entries: MemoryEntry[];
         try {
             const tx = db.transaction(STORE_NAME, "readonly");
@@ -126,6 +149,11 @@ async function loadMemoryEntriesFromDb(characterId: string): Promise<MemoryEntry
             entries = allEntries.filter(entry => entry.characterId === characterId);
         }
         entries.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+        recordPerformanceMetric("prompt.memory.load_entries", (typeof performance !== "undefined" ? performance.now() : Date.now()) - loadStartedAt, {
+            cacheHit: false,
+            entries: entries.length,
+            withEmbedding: entries.reduce((count, entry) => count + (entry.embedding?.length ? 1 : 0), 0),
+        });
         return entries;
     } finally {
         db.close();
@@ -226,6 +254,7 @@ export async function patchMemoryEntries(
 }
 
 export async function deleteMemoryEntry(id: string): Promise<void> {
+    invalidateMemoryEntriesCache();
     const db = await openDb();
     if (!db) return;
     try {
@@ -242,6 +271,7 @@ export async function deleteMemoryEntry(id: string): Promise<void> {
 
 export async function deleteMemoryEntries(ids: string[]): Promise<void> {
     if (ids.length === 0) return;
+    invalidateMemoryEntriesCache();
     const db = await openDb();
     if (!db) return;
     try {
