@@ -15,6 +15,7 @@ import { parseAIResponse, type ParsedMessagePart } from "@/lib/rich-message-pars
 import { isKnownStickerLabel } from "@/lib/sticker-data";
 import { translateReasoningText } from "@/lib/reasoning-translate";
 import { MessageBubble, MediaDetailModal, prewarmStickerCache, BilingualTextBlock, isStandaloneHtmlPreviewContent, normalizeTextBubbleContent } from "./message-bubble";
+import { recordPerformanceMetric } from "@/lib/performance-diagnostics";
 import { GeneratedImageErrorDialog } from "./generated-image-error-dialog";
 import { PhotoInputModal, TextPhotoModal, VoiceRecordModal, RedPacketModal, LocationInputModal, SystemInstructionModal } from "./rich-input-modals";
 import { EmojiPanel, StickerPanel } from "./emoji-panel";
@@ -530,6 +531,13 @@ function parseCallTime(value?: string | null): number {
 function shouldShowTimestamp(currentMsg: string, prevMsg: string | null): boolean {
     if (!prevMsg) return true; // First message always shows time
     return new Date(currentMsg).getTime() - new Date(prevMsg).getTime() > TIME_GAP;
+}
+
+/** 稳定回调：子组件 memo 只比较引用，这个包装让每次渲染都拿到最新闭包但引用不变。 */
+function useStableCallback<T extends (...args: any[]) => any>(callback: T): T {
+    const ref = useRef(callback);
+    ref.current = callback;
+    return useCallback(((...args: Parameters<T>) => ref.current(...args)) as T, []) as T;
 }
 
 type ChatRoomProps = {
@@ -1317,6 +1325,15 @@ export function ChatRoom({ session, onBack, onDeleted, isActive = true }: ChatRo
     const [liveCSS, setLiveCSS] = useState(session.customCSS || "");
     const [messages, setMessages] = useState<ChatMessage[]>([]);
     const [transientMessages, setTransientMessages] = useState<ChatMessage[]>([]);
+    // 渲染耗时：从本次 render 开始到 commit 后的 effect，用来区分“提示词构建”与“聊天室渲染”卡顿。
+    const renderStartedAtRef = useRef(0);
+    renderStartedAtRef.current = typeof performance !== "undefined" ? performance.now() : Date.now();
+    useEffect(() => {
+        recordPerformanceMetric("render.chat_room", (typeof performance !== "undefined" ? performance.now() : Date.now()) - renderStartedAtRef.current, {
+            messages: messages.length,
+            streaming: streamPreview ? 1 : 0,
+        });
+    });
     const [stickerReady, setStickerReady] = useState(false);
     const [character, setCharacter] = useState<Character | null>(() => {
         const chars = loadCharacters();
@@ -6161,6 +6178,23 @@ export function ChatRoom({ session, onBack, onDeleted, isActive = true }: ChatRo
         backgroundRepeat: "no-repeat",
     } : undefined;
 
+    const handleBubbleUpdate = useStableCallback((updated: ChatMessage) => {
+        setMessages(prev => prev.map(m => m.id === updated.id ? updated : m));
+    });
+    const handleBubbleSystemMessage = useStableCallback((text: string) => {
+        const sysMsg = pushChatMessage({
+            sessionId: session.id,
+            role: "system",
+            content: text,
+        });
+        setMessages(prev => [...prev, sysMsg]);
+    });
+    const handleBubbleActionSelect = useStableCallback((text: string) => {
+        chatTextInputRef.current?.appendText(text);
+    });
+    const stableMusicCardPlay = useStableCallback(handleMusicCardPlay);
+    const stableMeetingInviteAction = useStableCallback(handleMeetingInviteAction);
+
     return (
         <div ref={wrapperRef} className={`session-${session.id} chat-room-wrapper page-shell inset-0 flex flex-col z-20`} style={chatRoomBackgroundStyle} {...(bgLoading ? { "data-loading": "" } : {})} {...(bgImageResolved ? { "data-has-bg-image": "" } : {})} {...(showSettings ? { "data-settings-open": "" } : {})}>
             {/* CSS priority: session > global chat info > homepage appearance CSS. */}
@@ -6847,18 +6881,11 @@ export function ChatRoom({ session, onBack, onDeleted, isActive = true }: ChatRo
                                                 groupSize={session.isGroup ? (session.participantIds?.length || 0) + (session.isSpectator ? 0 : 1) : undefined}
                                                 onShowDetail={setMediaDetailMsg}
                                                 characterId={msg.senderCharacterId || resolveSessionCharacterId(session) || ""}
-                                                onUpdate={(updated) => setMessages(prev => prev.map(m => m.id === updated.id ? updated : m))}
-                                                onSystemMessage={(text) => {
-                                                    const sysMsg = pushChatMessage({
-                                                        sessionId: session.id,
-                                                        role: "system",
-                                                        content: text,
-                                                    });
-                                                    setMessages(prev => [...prev, sysMsg]);
-                                                }}
-                                                onMusicPlay={handleMusicCardPlay}
-                                                onActionSelect={(text) => chatTextInputRef.current?.appendText(text)}
-                                                onMeetingInviteAction={handleMeetingInviteAction}
+                                                onUpdate={handleBubbleUpdate}
+                                                onSystemMessage={handleBubbleSystemMessage}
+                                                onMusicPlay={stableMusicCardPlay}
+                                                onActionSelect={handleBubbleActionSelect}
+                                                onMeetingInviteAction={stableMeetingInviteAction}
                                                 defaultTranslationExpanded={session.collapseBilingualTranslation !== false ? false : true}
                                             />
                                         </div>
