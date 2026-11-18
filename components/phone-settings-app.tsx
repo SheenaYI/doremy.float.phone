@@ -305,6 +305,17 @@ export function PhoneSettingsApp({ onClose, onNotice }: SettingsPageProps) {
         onClick: () => setCurrentPage("agentComputer"),
     };
 
+    const diagnosticsItem = SETTINGS_MENU.find(i => i.id === "diagnostics")!;
+    const diagnosticsFeaturedItem: FeaturedCardItem = {
+        id: diagnosticsItem.id,
+        icon: diagnosticsItem.icon,
+        label: diagnosticsItem.label,
+        desc: diagnosticsItem.desc,
+        iconColor: diagnosticsItem.iconColor,
+        glassIcon: diagnosticsItem.glass,
+        onClick: () => setCurrentPage("diagnostics"),
+    };
+
     const bindingItem = SETTINGS_MENU.find(i => i.id === "binding")!;
     const bindingFeaturedItem: FeaturedCardItem = {
         id: bindingItem.id,
@@ -549,9 +560,7 @@ export function PhoneSettingsApp({ onClose, onNotice }: SettingsPageProps) {
                                 <Toggle checked={keepAlive} onChange={handleKeepAliveChange} className="settings-toggle-control" />
                             </div>
                         </div>
-                        <CardGrid
-                            items={SETTINGS_MENU.filter(item => ["diagnostics"].includes(item.id)).map(makeCardItem)}
-                        />
+                        <FeaturedCard item={diagnosticsFeaturedItem} />
                         {isAdmin ? (
                             <div className="settings-moderation-section">
                                 <h3 className="settings-menu-section-title">Moderation</h3>

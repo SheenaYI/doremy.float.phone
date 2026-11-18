@@ -7,6 +7,7 @@ import { resolveAuxiliaryApiConfig } from "./settings-storage";
 import { generateEmbedding, resolveEmbeddingModel, cosineSimilarity } from "./memory-embedding";
 import { estimateTokens } from "./token-counter";
 import { MEMORY_ROOMS, resolveRoomBudgets, normalizeRoomFlags } from "./memory-room";
+import { recordPerformanceMetric } from "./performance-diagnostics";
 
 /** 单条记忆注入时的固定开销（换行等），与 fillByBudget 保持一致 */
 const ENTRY_OVERHEAD = 4;
@@ -60,7 +61,11 @@ export async function retrieveMemoriesForPrompt(
     // Strategy 2: vector recall enabled + embedding API configured → vector search, fill by relevance
     const embeddingApiConfig = config.vectorRecallEnabled ? resolveAuxiliaryApiConfig("embeddingApiConfigId") : null;
     if (embeddingApiConfig && resolveEmbeddingModel(embeddingApiConfig)) {
+        const embeddingStartedAt = typeof performance !== "undefined" ? performance.now() : Date.now();
         const queryEmbedding = await generateEmbedding(currentContext, embeddingApiConfig);
+        recordPerformanceMetric("prompt.memory.embedding", (typeof performance !== "undefined" ? performance.now() : Date.now()) - embeddingStartedAt, {
+            path: "long_term_vector",
+        });
         if (queryEmbedding) {
             const withEmbeddings = longTermEntries.filter(m => m.embedding && m.embedding.length > 0);
             if (withEmbeddings.length > 0) {
@@ -150,7 +155,11 @@ async function selectByRoomBudget(
     const embeddingApiConfig = config.vectorRecallEnabled ? resolveAuxiliaryApiConfig("embeddingApiConfigId") : null;
     if (embeddingApiConfig && resolveEmbeddingModel(embeddingApiConfig)) {
         try {
+            const embeddingStartedAt = typeof performance !== "undefined" ? performance.now() : Date.now();
             const queryEmbedding = await generateEmbedding(currentContext, embeddingApiConfig);
+            recordPerformanceMetric("prompt.memory.embedding", (typeof performance !== "undefined" ? performance.now() : Date.now()) - embeddingStartedAt, {
+                path: "room_vector",
+            });
             if (queryEmbedding) {
                 const map = new Map<string, number>();
                 for (const entry of entries) {
