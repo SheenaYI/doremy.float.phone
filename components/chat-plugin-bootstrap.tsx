@@ -7,10 +7,6 @@
 import { useEffect } from "react";
 import { hydrateKvDb } from "@/lib/kv-db";
 import { loadChatPlugins } from "@/lib/chat-plugin-storage";
-import {
-    getChatPluginRuntime,
-    setChatPluginSafeMode,
-} from "@/lib/chat-plugin-runtime";
 
 const EMERGENCY_BLOCKED_PLUGIN_IDS = new Set([
     "image-api-floating-ball",
@@ -22,6 +18,9 @@ export function ChatPluginBootstrap() {
         void (async () => {
             // 先读取 iOS 桌面 Web App 自己的本地数据库，再启动任何插件。
             await hydrateKvDb();
+            // Load the execution engine after the first paint, rather than blocking
+            // the splash with its AI/tool dependencies in the layout bundle.
+            const { getChatPluginRuntime, setChatPluginSafeMode } = await import("@/lib/chat-plugin-runtime");
 
             // 只要已确认会锁死触控的插件仍处于启用状态，就进入安全模式。
             // 这里只改变插件启动状态，不删除角色、聊天、图片、API 或备份数据。
@@ -31,7 +30,7 @@ export function ChatPluginBootstrap() {
             if (hasBlockedPlugin) setChatPluginSafeMode(true);
 
             await getChatPluginRuntime().ensureStarted();
-        })();
+        })().catch(error => console.warn("[ChatPlugins] startup failed:", error));
     }, []);
 
     return null;

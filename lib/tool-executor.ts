@@ -1,3 +1,5 @@
+import { MCP_OAUTH_PENDING_STORAGE_KEY, MCP_OAUTH_CALLBACK_STORAGE_KEY } from "./mcp-oauth-callback-state";
+export { MCP_OAUTH_CALLBACK_STORAGE_KEY, hasPendingMcpOAuthCallback } from "./mcp-oauth-callback-state";
 import type {
     CompositeToolConfig,
     CompositeToolPackageConfig,
@@ -3961,8 +3963,6 @@ type McpOAuthCallbackState = {
     createdAt: number;
 };
 
-const MCP_OAUTH_PENDING_STORAGE_KEY = "ai_phone_mcp_oauth_pending_v1";
-export const MCP_OAUTH_CALLBACK_STORAGE_KEY = "ai_phone_mcp_oauth_callback_v1";
 const MCP_OAUTH_MAX_AGE_MS = 10 * 60 * 1000;
 const MCP_OAUTH_CALLBACK_TIMEOUT_MS = 10 * 60 * 1000;
 // Per-probe timeout for OAuth metadata discovery. Candidates are tried in parallel,
@@ -4491,11 +4491,6 @@ function consumeStoredOAuthCallback(expectedState: string): McpOAuthCallbackStat
     return callback;
 }
 
-export function hasPendingMcpOAuthCallback(): boolean {
-    const pending = readStorageJson<McpOAuthPendingState>(MCP_OAUTH_PENDING_STORAGE_KEY);
-    const callback = readStorageJson<McpOAuthCallbackState>(MCP_OAUTH_CALLBACK_STORAGE_KEY);
-    return Boolean(pending?.state && callback?.state && pending.state === callback.state);
-}
 
 export async function completePendingMcpOAuthCallback(): Promise<{ completed: boolean; success?: boolean; error?: string; serverName?: string }> {
     const pending = readStorageJson<McpOAuthPendingState>(MCP_OAUTH_PENDING_STORAGE_KEY);

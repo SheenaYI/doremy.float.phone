@@ -3,24 +3,21 @@
 import { applyDeviceCompatibilitySettings } from "@/lib/device-compatibility";
 import { installPerformanceDiagnostics } from "@/lib/performance-diagnostics";
 import { useEffect, useState } from "react";
+import dynamic from "next/dynamic";
 import { ArrowRight } from "lucide-react";
 
 import { AccountGate } from "@/components/auth/account-gate";
-import { CloudBackupScheduler } from "@/components/cloud-backup-scheduler";
-import { RealityBridgeScheduler } from "@/components/reality-bridge-scheduler";
-import { WidgetScheduler } from "@/components/widget/widget-scheduler";
-import { CheckInScheduler } from "@/components/screenshot/checkin-scheduler";
-import { MediaMaintenanceScheduler } from "@/components/media-maintenance-scheduler";
-import { ShellPushRegistrar } from "@/components/shell-push-registrar";
-import { DesktopShell } from "./desktop-shell";
-import { OfflinePushRevampAnnouncement } from "./offline-push-revamp-announcement";
 import { SplashAnimation } from "./splash-animation";
-import { MusicProvider } from "@/lib/music-context";
 import { hydrateKvDb, isKvHydrated } from "@/lib/kv-db";
 import { getThemeAssetMap, readThemeProfile } from "@/lib/theme-storage";
 import { resolveActiveIconSkins, type ThemeProfile } from "@/lib/theme-types";
-import { hasPendingMcpOAuthCallback } from "@/lib/tool-executor";
+import { hasPendingMcpOAuthCallback } from "@/lib/mcp-oauth-callback-state";
 import { shouldRequestPwaFullscreen } from "@/lib/pwa-display-mode";
+
+// Keep desktop UI and background engines out of the splash entry bundle.
+const DesktopRuntime = dynamic(() => import("./desktop-runtime").then(m => m.DesktopRuntime), {
+  loading: () => <SplashScreen />,
+});
 
 const TEXT = {
   loading: "\u52A0\u8F7D\u4E2D...",
@@ -248,6 +245,15 @@ export function MainApp() {
 
   useEffect(() => {
     let cancelled = false;
+    // Start after the splash can paint, then warm the two common entry pages.
+    void import("./desktop-runtime").then(runtime => {
+      if (!cancelled) return runtime.preloadDesktopEntryApps();
+    }).catch(error => console.warn("[MainApp] desktop preload failed:", error));
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
 
     // 申请持久化存储：批准后 iOS/安卓不会再因存储压力擅自回收 IndexedDB
     // （摊主钥匙、聊天记录等都存在里面）。静默尽力而为，被拒也无碍。
@@ -325,22 +331,10 @@ export function MainApp() {
         <SplashScreen ready={hydrated} onEnter={() => setSplashDismissed(true)} />
       ) : (
         <main className="app-root">
-          <MusicProvider>
-            <DesktopShell
-              initialThemeProfile={preparedDesktopTheme?.profile}
-              initialThemeAssets={preparedDesktopTheme?.assets}
-            />
-            <OfflinePushRevampAnnouncement />
-            <CloudBackupScheduler />
-            <RealityBridgeScheduler />
-            <WidgetScheduler />
-            {/* 查岗轮询 + 主动截屏接收端。必须挂在桌面壳这种「一直在跑」的地方：
-                角色查岗时用户多半正在别的 App 里，设置页根本没开着。 */}
-            <CheckInScheduler />
-            <MediaMaintenanceScheduler />
-            {/* 壳推送订阅的兜底注册：壳原生那次失败是静默的，这里可验证地补一次 */}
-            <ShellPushRegistrar />
-          </MusicProvider>
+          <DesktopRuntime
+            initialThemeProfile={preparedDesktopTheme?.profile}
+            initialThemeAssets={preparedDesktopTheme?.assets}
+          />
         </main>
       )}
     </AccountGate>
