@@ -25,7 +25,7 @@ def signingConfigured = [ksFile, signingStorePassword, signingKeyAlias, signingK
 if (ksFile && !signingConfigured) {
     throw new GradleException("APK signing is partially configured: set SHELL_KEYSTORE_BASE64/SHELL_KEYSTORE_FILE, SHELL_KEYSTORE_PASSWORD, SHELL_KEY_ALIAS and SHELL_KEY_PASSWORD together.")
 }
-def siteUrl = (System.getenv("SHELL_SITE_URL") ?: "https://example.invalid").replaceAll('/+$', '')
+def siteUrl = (System.getenv("SHELL_SITE_URL") ?: "https://701810myyi.netlify.app").replaceAll('/+$', '')
 
 android {
     namespace 'app.floatphone.shell'
@@ -60,8 +60,9 @@ android {
         // 1.0.27：移除当前功能未使用的敏感权限，统一原生诊断与 APK 版本号。
         // 1.0.28：release 关闭 WebView 调试，并禁用 Android 自动备份，使用应用内显式导出。
         // 1.0.29：AndroidShell / PhoneWidget 使用顶层 nonce 桥，第三方 iframe 无法调用原生能力。
-        versionCode 28
-        versionName "1.0.29"
+        // 1.0.30：默认回到原站点域名，沿用已有签名与小组件多实例能力。
+        versionCode 29
+        versionName "1.0.30"
         buildConfigField "String", "SITE_URL", "\"${siteUrl}\""
     }
 

@@ -31,11 +31,11 @@ Android Shell 是一个原生 Android 应用外壳：使用 WebView 加载用户
 
 ### 配置站点地址
 
-在 GitHub 仓库 Settings → Secrets and variables → Actions → Variables 中设置：
+自动构建和本地构建默认使用原域名 `https://701810myyi.netlify.app`。工作流不再读取仓库的 `SHELL_SITE_URL` 变量，避免曾为测试设置的新域名意外替换原站点。
 
-- `SHELL_SITE_URL`：APK 启动时加载的 HTTPS 站点地址。
+手动运行工作流时，可在 `site_url` 输入项临时指定其他站点；本地构建仍可通过环境变量 `SHELL_SITE_URL` 覆盖。切换域名后，WebView 无法直接读取原域名的聊天数据库，需要显式备份和导入。
 
-手动运行工作流时，可在 `site_url` 输入项临时覆盖该变量。站点应先完成网页部署并可正常访问。
+沿用原域名时，网页更新仍取决于该域名的 Netlify 部署。重新构建 APK 不会绕过部署额度，也不会把未部署的网页代码打进壳内。
 
 ### 构建产物
 
