@@ -6,7 +6,6 @@ import { updateStatusBarTone } from "@/lib/bg-tone";
 import { loadDeviceCompatibilitySettings } from "@/lib/device-compatibility";
 import { startDiaryEntryTimerService, stopDiaryEntryTimerService } from "@/lib/diary-entry-timer-service";
 import { startFollowUpService, stopFollowUpService } from "@/lib/follow-up-service";
-import { installLifeScheduleProactiveScheduler } from "@/lib/life/life-proactive-scheduler";
 import { startMomentsService, stopMomentsService } from "@/lib/moments-engine";
 import { bgTimerCleanup } from "@/lib/bg-timer";
 import { PhoneThemeApp } from "@/components/phone-theme-app";
@@ -29,10 +28,7 @@ import { REALITY_BRIDGE_APP_EVENT_NAME, REALITY_BRIDGE_DATA_EVENT } from "@/lib/
 import { DiaryApp } from "@/components/diary/diary-app";
 import { XiaohongshuApp } from "@/components/xiaohongshu/xiaohongshu-app";
 import { StoryApp } from "@/components/story/story-app";
-import { LifeEngineApp } from "@/components/life/life-engine-app";
 import { ArchiveRoomApp } from "@/components/archive-room-app";
-import { PhotoWallApp } from "@/components/photo-wall-app";
-import { WatchTogetherApp } from "@/components/watch-together-app";
 import { CALL_STATS_ENTRY_HTML } from "@/lib/builtin-apps/call-stats-source";
 import { VnApp } from "@/components/vn/vn-app";
 import ReadingApp from "@/components/reading/reading-app";
@@ -161,7 +157,7 @@ const EMOJI_FONTS = '"Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", 
 
 const ICON_LAYOUT_STORAGE_KEY = "ai_phone_icon_layout_v2";
 const ICON_LAYOUT_STORAGE_KEY_V1 = "ai_phone_icon_layout_v1";
-const NEW_LIFESTYLE_APPS_PAGE_MIGRATION_KEY = "ai_phone_new_lifestyle_apps_page4_v1";
+const REMOVED_LIFESTYLE_APP_IDS = ["life", "photowall", "watchtogether"] as const;
 // Sentinel "page" used by the drag engine to mean "the dock". getDesktopPageNumber
 // returns 0 for it and getDesktopPageKeys filters it out, so page iteration never
 // treats the dock as a real page.
@@ -422,38 +418,37 @@ function getInstalledCustomIconIds(): Set<string> {
 }
 
 
-function migrateNewLifestyleAppsToPageFour(
+function removeRetiredAppsFromDesktop(
   layout: DesktopLayout,
   widgets: WidgetInstance[],
   dock: DesktopIconId[],
   folders: DesktopFolderMap,
-): DesktopLayout {
-  if (kvGet(NEW_LIFESTYLE_APPS_PAGE_MIGRATION_KEY) === "1") return layout;
-  const movedIds = new Set<DesktopIconId>(["life", "archive", "photowall", "watchtogether"]);
+): { layout: DesktopLayout; dock: DesktopIconId[]; folders: DesktopFolderMap; changed: boolean } {
+  const removed = new Set<DesktopIconId>(REMOVED_LIFESTYLE_APP_IDS);
   const next = cloneDesktopLayout(layout, widgets);
+  let changed = false;
   for (const pageKey of getDesktopPageKeysForState(next, widgets)) {
-    next[pageKey] = (next[pageKey] ?? []).filter(icon => !movedIds.has(icon.id));
+    const before = next[pageKey] ?? [];
+    const filtered = before.filter(icon => !removed.has(icon.id));
+    if (filtered.length !== before.length) {
+      next[pageKey] = filtered;
+      changed = true;
+    }
   }
-  ensureDesktopPage(next, "page4" as DesktopPageKey);
-  const folderMembers = new Set(Object.values(folders).flatMap(folder => folder.icons));
-  const widgetOcc = buildWidgetOccupancy(widgets.filter(widget => widget.page === 4));
-  const usedCells = new Set((next.page4 ?? []).map(icon => `${icon.row},${icon.col}`));
-  for (const id of ["life", "archive", "photowall", "watchtogether"] as const) {
-    if (dock.includes(id) || folderMembers.has(id)) continue;
-    const desired = id === "life" ? { row: 3, col: 2 }
-      : id === "archive" ? { row: 3, col: 3 }
-      : id === "photowall" ? { row: 4, col: 2 }
-      : { row: 4, col: 3 };
-    const free = findNearestFreeCell(desired.row, desired.col, widgetOcc, usedCells);
-    if (!free) continue;
-    next.page4.push({ id, ...free });
-    usedCells.add(`${free.row},${free.col}`);
+  const nextDock = dock.filter(id => !removed.has(id));
+  if (nextDock.length !== dock.length) changed = true;
+  const nextFolders: DesktopFolderMap = {};
+  for (const [folderId, folder] of Object.entries(folders)) {
+    const icons = folder.icons.filter(id => !removed.has(id));
+    if (icons.length !== folder.icons.length) changed = true;
+    if (icons.length === 0) {
+      changed = true;
+      continue;
+    }
+    nextFolders[folderId] = { ...folder, icons };
   }
-  kvSet(NEW_LIFESTYLE_APPS_PAGE_MIGRATION_KEY, "1");
-  return next;
+  return { layout: next, dock: nextDock, folders: nextFolders, changed };
 }
-
-
 
 function migrateLegacyDesktopIconId(id: string, customIconIds = getInstalledCustomIconIds()): DesktopIconId | null {
   if (id === "weibo") return "game";
@@ -1215,7 +1210,6 @@ export function DesktopShell({ initialThemeProfile, initialThemeAssets }: Deskto
   const [glassPaintPass, setGlassPaintPass] = useState(0);
   const [notice, setNotice] = useState<string | null>(null);
   const [activeApp, setActiveApp] = useState<DesktopIconId | null>(null);
-  const [lifeFocusCharacterId, setLifeFocusCharacterId] = useState<string | null>(null);
   const [customApps, setCustomApps] = useState<InstalledCustomApp[]>([]);
   // 自定义 APP 桌面图标样式偏好（global = 忽略上传图标走全局效果）
   const [customAppIconStyles, setCustomAppIconStyles] = useState<Record<string, CustomAppIconStyle>>({});
@@ -1646,12 +1640,15 @@ export function DesktopShell({ initialThemeProfile, initialThemeAssets }: Deskto
         try {
           const normalized = normalizeLayout(JSON.parse(rawV2), hydratedWidgets, dockIds, hydratedFolders);
           const sane = sanitizeDesktopFolders(hydratedFolders, normalized, hydratedDock, hydratedWidgets);
-          const migratedLayout = migrateNewLifestyleAppsToPageFour(sane.layout, hydratedWidgets, hydratedDock, sane.folders);
-          setFolders(sane.folders);
-          setLayout(migratedLayout);
+          const retired = removeRetiredAppsFromDesktop(sane.layout, hydratedWidgets, hydratedDock, sane.folders);
+          setDock(retired.dock);
+          setFolders(retired.folders);
+          setLayout(retired.layout);
           if (sane.changed) writeDesktopFolders(sane.folders);
-          if (sane.changed || migratedLayout !== sane.layout || migratedLayout !== migratedLayout || kvGet(NEW_LIFESTYLE_APPS_PAGE_MIGRATION_KEY) === "1") {
-            kvSet(ICON_LAYOUT_STORAGE_KEY, JSON.stringify(migratedLayout));
+          if (retired.changed || sane.changed) {
+            kvSet(ICON_LAYOUT_STORAGE_KEY, JSON.stringify(retired.layout));
+            writeDockLayout(retired.dock);
+            writeDesktopFolders(retired.folders);
           }
           setDesktopReady(true);
           return;
@@ -1932,7 +1929,6 @@ export function DesktopShell({ initialThemeProfile, initialThemeAssets }: Deskto
     let cancelled = false;
     let servicesStarted = false;
     let cleanupWeixinCloudRealtimeSync: (() => void) | null = null;
-    let cleanupLifeScheduleScheduler: (() => void) | null = null;
 
     void (async () => {
       try {
@@ -1969,8 +1965,6 @@ export function DesktopShell({ initialThemeProfile, initialThemeAssets }: Deskto
       if (cancelled) return;
       startFollowUpService();
       startMomentsService();
-      const stopLifeScheduleScheduler = installLifeScheduleProactiveScheduler();
-      cleanupLifeScheduleScheduler = stopLifeScheduleScheduler;
       startDiaryEntryTimerService();
       const stopWeixinCloudRealtimeSync = startWeixinCloudRealtimeSync();
       servicesStarted = true;
@@ -1989,8 +1983,6 @@ export function DesktopShell({ initialThemeProfile, initialThemeAssets }: Deskto
       if (servicesStarted) {
         stopFollowUpService();
         stopMomentsService();
-        cleanupLifeScheduleScheduler?.();
-        cleanupLifeScheduleScheduler = null;
         stopDiaryEntryTimerService();
       }
       bgTimerCleanup();
@@ -2592,7 +2584,6 @@ html,body{margin:0;padding:0;width:100%;height:100%;background:#121110;color:rgb
           }
           : null);
         setAppMarketLaunchContext(nextAppId === "appmarket" ? launchContextRecord : null);
-        setLifeFocusCharacterId(nextAppId === "life" && typeof detail.characterId === "string" ? detail.characterId : null);
         if (detail.appId === "resources") {
           setResourcesInitialPage(detail.resourcePage === "vn_assets" || detail.resourcePage === "memory" ? detail.resourcePage : "main");
         }
@@ -4497,20 +4488,8 @@ html,body{margin:0;padding:0;width:100%;height:100%;background:#121110;color:rgb
       return <StoryApp onClose={() => setActiveApp(null)} />;
     }
 
-    if (activeApp === "life") {
-      return <LifeEngineApp onClose={() => setActiveApp(null)} initialCharacterId={lifeFocusCharacterId ?? undefined} />;
-    }
-
     if (activeApp === "archive") {
       return <ArchiveRoomApp onClose={() => setActiveApp(null)} onNotice={setNotice} />;
-    }
-
-    if (activeApp === "photowall") {
-      return <PhotoWallApp onClose={() => setActiveApp(null)} onNotice={setNotice} />;
-    }
-
-    if (activeApp === "watchtogether") {
-      return <WatchTogetherApp onClose={() => setActiveApp(null)} onNotice={setNotice} />;
     }
 
     if (activeApp === "callstats") {

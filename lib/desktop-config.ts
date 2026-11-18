@@ -74,9 +74,9 @@ export const PAGE_2_DEFAULT: IconId[] = [
   "mapmode"
 ];
 
-// 第三页放系统/工具类应用；生活、档案、照片墙、一起看单独放到第四页，避免与已有图标/组件抢位置。
+// 第三页放系统/工具类应用；档案室/通话统计单独放第四页。生活、照片墙、一起看暂时不上桌面。
 export const PAGE_3_DEFAULT: IconId[] = ["worldbuilder", "qa", "resource_hub", "realitybridge", "mixology"];
-export const PAGE_4_DEFAULT: IconId[] = ["life", "archive", "photowall", "watchtogether", "callstats"];
+export const PAGE_4_DEFAULT: IconId[] = ["archive", "callstats"];
 
 export const DOCK_DEFAULT: IconId[] = ["settings", "theme", "resources", "characters"];
 

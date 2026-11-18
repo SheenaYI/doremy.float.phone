@@ -1959,17 +1959,32 @@ export async function buildChatPromptMessages(
         resolveVisionImagePromptLimit(session),
     );
 
+    const perfNow = () => (typeof performance !== "undefined" ? performance.now() : Date.now());
+    const timedStage = async <T,>(name: string, task: () => Promise<T>): Promise<T> => {
+        const startedAt = perfNow();
+        try {
+            return await task();
+        } finally {
+            recordPerformanceMetric(name, perfNow() - startedAt, { appId: resolvedAppId });
+        }
+    };
+
     if (config.enableImageRecognition) {
+        const visionStartedAt = perfNow();
         for (const msg of promptHistory) {
             await prepareVisionPromptImageMessage(msg);
         }
+        recordPerformanceMetric("prompt.prepare.vision", perfNow() - visionStartedAt, {
+            appId: resolvedAppId,
+            messages: promptHistory.length,
+        });
     }
 
     const [memResults, coreResults, musicLocal, musicCloud] = await Promise.all([
-        retrieveMemoriesForPrompt(character.id, wbActivationContext, memConfig).catch(() => null),
-        retrieveCoreMemoriesForPrompt(character.id, memConfig).catch(() => null),
-        buildMusicLocalMacro(),
-        buildMusicCloudMacro(),
+        timedStage("prompt.memory.long_term", () => retrieveMemoriesForPrompt(character.id, wbActivationContext, memConfig).catch(() => null)),
+        timedStage("prompt.memory.core", () => retrieveCoreMemoriesForPrompt(character.id, memConfig).catch(() => null)),
+        timedStage("prompt.memory.music_local", () => buildMusicLocalMacro()),
+        timedStage("prompt.memory.music_cloud", () => buildMusicCloudMacro()),
     ]);
 
     const longTermMemories = [
@@ -1981,12 +1996,12 @@ export async function buildChatPromptMessages(
     const scheduleSummary = buildChatCalendarContext("character", character.id, now);
     const currentSchedule = getCurrentCalendarScheduleForPrompt("character", character.id, now);
     const musicOnlineHint = isNeteaseConfigured() ? "- 你可以推荐任何歌曲，系统会在线搜索并播放。不局限于用户本地音乐库。\n" : "\n";
-    const pluginPrompt = await runChatPluginTransform("prompt.system", {
+    const pluginPrompt = await timedStage("prompt.prepare.plugin", () => runChatPluginTransform("prompt.system", {
         sessionId: session.id,
         isGroup: !!session.isGroup,
         characterId: character.id,
         hint: buildChatPluginPromptFragments(session.id),
-    });
+    }));
     const pluginPromptHint = pluginPrompt.hint?.trim() ? `\n\n### 扩展插件\n${pluginPrompt.hint.trim()}\n` : "";
     const customAppRichMediaDirectives = formatCustomAppChatDirectivesForPrompt() + buildScreenEffectPromptHint() + pluginPromptHint;
     const toolsPrompt = toolsEnabled && !usesNativeActions ? formatToolsForPrompt(enabledTools) : "";
@@ -2154,6 +2169,29 @@ export async function buildChatPromptMessages(
     }
 
     // ── 一次性事件提示（定时查岗的反应指导语）──
+    // Prompt 前缀缓存实验：时间字符串是默认预设里每轮都会变的少数字段。
+    // 把正文里的时间替换成稳定占位符，再把真实时间作为最后一条 system 注入；
+    // 这样人设/世界书/格式段在相邻回合可以保持相同前缀，命中中转的 prefix cache。
+    // 只对私聊开启；群聊/离线/VN 各有独立的上下文顺序，先不动。
+    if (resolvedAppId === "chat" && !isOfflineMode && promptTimeContext.timeContext.trim()) {
+        const timeMarker = "（当前时间见末尾）";
+        let replaced = 0;
+        for (const message of llmMessages) {
+            if (typeof message.content !== "string") continue;
+            if (!message.content.includes(promptTimeContext.timeContext)) continue;
+            message.content = message.content.split(promptTimeContext.timeContext).join(timeMarker);
+            replaced += 1;
+        }
+        if (replaced > 0) {
+            llmMessages.push({ role: "system", content: `【当前时间】${promptTimeContext.timeContext}` });
+            recordPerformanceMetric("prompt.chat.time_deferred", 0, {
+                appId: resolvedAppId,
+                replaced,
+                chars: promptTimeContext.timeContext.length,
+            });
+        }
+    }
+
     // 放在最后：它是「此刻该怎么回应」的即时要求，压过前面所有常驻设定。
     // 只存在于本次请求的 messages 数组里，没人把它写进聊天记录，所以不会
     // 在后续每一轮被重新读到、变成反复念叨。

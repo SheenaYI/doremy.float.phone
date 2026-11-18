@@ -9,7 +9,6 @@ import { CloudBackupScheduler } from "@/components/cloud-backup-scheduler";
 import { RealityBridgeScheduler } from "@/components/reality-bridge-scheduler";
 import { WidgetScheduler } from "@/components/widget/widget-scheduler";
 import { CheckInScheduler } from "@/components/screenshot/checkin-scheduler";
-import { installLifeScheduleProactiveScheduler } from "@/lib/life/life-proactive-scheduler";
 import { MediaMaintenanceScheduler } from "@/components/media-maintenance-scheduler";
 import { ShellPushRegistrar } from "@/components/shell-push-registrar";
 import { DesktopShell } from "./desktop-shell";
@@ -231,11 +230,6 @@ async function prepareDesktopThemeForFirstPaint(): Promise<PreparedDesktopTheme>
   return { profile, assets };
 }
 
-function LifeScheduleScheduler() {
-  useEffect(() => installLifeScheduleProactiveScheduler(), []);
-  return null;
-}
-
 export function MainApp() {
   const [preparedDesktopTheme, setPreparedDesktopTheme] = useState<PreparedDesktopTheme | null>(null);
   const [hydrated, setHydrated] = useState(false);
@@ -367,8 +361,6 @@ export function MainApp() {
             {/* 查岗轮询 + 主动截屏接收端。必须挂在桌面壳这种「一直在跑」的地方：
                 角色查岗时用户多半正在别的 App 里，设置页根本没开着。 */}
             <CheckInScheduler />
-            {/* 云端生活日程/离线主动消息调度必须挂在全局壳层，不能依赖生活页面保持打开。 */}
-            <LifeScheduleScheduler />
             <MediaMaintenanceScheduler />
             {/* 壳推送订阅的兜底注册：壳原生那次失败是静默的，这里可验证地补一次 */}
             <ShellPushRegistrar />

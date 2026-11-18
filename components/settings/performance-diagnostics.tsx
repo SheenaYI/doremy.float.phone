@@ -38,7 +38,7 @@ function formatBytes(value: number | null): string {
 
 function MetricCard({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
-    <div style={{ border: "1px solid var(--border, rgba(128,128,128,.18))", borderRadius: 14, padding: 13, minWidth: 0 }}>
+    <div style={{ border: "1px solid var(--border, rgba(128,128,128,.18))", borderRadius: 16, padding: 16, minWidth: 0 }}>
       <div style={{ fontSize: 11, opacity: .62 }}>{label}</div>
       <div style={{ fontSize: 19, fontWeight: 650, marginTop: 5, overflowWrap: "anywhere" }}>{value}</div>
       {hint ? <div style={{ fontSize: 10, opacity: .52, marginTop: 4 }}>{hint}</div> : null}
@@ -132,7 +132,7 @@ export function PerformanceDiagnostics() {
   const slowest = snapshot.metrics[0];
 
   return (
-    <section style={{ display: "grid", gap: 14 }}>
+    <section style={{ display: "grid", gap: 18, paddingBottom: 28 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
         <Activity size={19} />
         <div style={{ flex: 1, minWidth: 0 }}>
@@ -144,7 +144,7 @@ export function PerformanceDiagnostics() {
         </button>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 9 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 12 }}>
         <MetricCard label="JS 堆内存" value={formatBytes(heapUsed)} hint={sample?.jsHeapLimitBytes ? "上限 " + formatBytes(sample.jsHeapLimitBytes) : "浏览器可能不支持内存 API"} />
         <MetricCard label="页面 DOM 节点" value={sample ? sample.domNodes.toLocaleString() : "采集中"} hint="包含当前页面内所有元素" />
         <MetricCard label="主线程长任务" value={String(longTaskCount)} hint="单个任务超过 50ms；仅支持的浏览器可用" />
@@ -168,8 +168,8 @@ export function PerformanceDiagnostics() {
 
       <div style={{ borderTop: "1px solid var(--border, rgba(128,128,128,.18))", paddingTop: 12 }}>
         <div style={{ fontSize: 13, fontWeight: 650, marginBottom: 8 }}>耗时热点</div>
-        {snapshot.metrics.length ? snapshot.metrics.slice(0, 12).map(metric => (
-          <div key={metric.name} style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) auto", gap: 8, padding: "8px 0", borderBottom: "1px solid var(--border, rgba(128,128,128,.1))" }}>
+        {snapshot.metrics.length ? snapshot.metrics.slice(0, 30).map(metric => (
+          <div key={metric.name} style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) auto", gap: 8, padding: "10px 0", borderBottom: "1px solid var(--border, rgba(128,128,128,.1))" }}>
             <div style={{ minWidth: 0 }}>
               <div style={{ fontSize: 11, overflowWrap: "anywhere" }}>{metric.name}</div>
               <div style={{ fontSize: 10, opacity: .52 }}>次数 {metric.count} · 平均 {metric.averageMs} ms · 最大 {metric.maxMs} ms</div>
@@ -182,8 +182,8 @@ export function PerformanceDiagnostics() {
 
       <div style={{ borderTop: "1px solid var(--border, rgba(128,128,128,.18))", paddingTop: 12 }}>
         <div style={{ fontSize: 13, fontWeight: 650, marginBottom: 8 }}>最近主线程长任务</div>
-        {snapshot.longTasks.length ? snapshot.longTasks.slice(0, 8).map((task, index) => (
-          <div key={task.at + index} style={{ fontSize: 11, padding: "6px 0", opacity: .76 }}>
+        {snapshot.longTasks.length ? snapshot.longTasks.slice(0, 20).map((task, index) => (
+          <div key={task.at + index} style={{ fontSize: 11, padding: "8px 0", opacity: .76 }}>
             {new Date(task.at).toLocaleTimeString()} · {task.durationMs} ms
           </div>
         )) : <div style={{ fontSize: 11, opacity: .55 }}>暂无记录，或当前浏览器不支持 Long Task API。</div>}
